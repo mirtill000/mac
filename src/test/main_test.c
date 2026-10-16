@@ -236,6 +236,10 @@ int main(int argc, char **argv)
 
     printf("Gabbiano\n");
     travel(1);
+    /* molo: il mare a sinistra non e' calpestabile */
+    click(40, 190);
+    settle();
+    CHECK(game_debug(DBG_HY, 0) >= 214, "non cammina sull'acqua (molo)");
     verb(V_DAI);
     inv_click(IT_CALAMARO);
     hot(H_GABBIANO);
@@ -250,6 +254,16 @@ int main(int argc, char **argv)
     printf("Rovine\n");
     travel(4);
     CHECK(game_debug(DBG_ROOM, 0) == ROOM_NIGHT, "alle Rovine");
+    /* clic sull'acqua a sinistra del pontile: deve restare sulle assi */
+    click(120, 196);
+    settle();
+    CHECK(game_debug(DBG_HY, 0) >= 224, "non cammina sull'acqua (rovine)");
+    click(290, 210);
+    settle();
+    CHECK(game_debug(DBG_HX, 0) >= 200 && game_debug(DBG_HY, 0) >= 206, "sale sulla piattaforma");
+    click(60, 180);
+    settle();
+    CHECK(game_debug(DBG_HY, 0) >= 224, "ridiscende senza tagliare sull'acqua");
     verb(V_PARLA);
     hot(H_CUSTODE);
     settle();

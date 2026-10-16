@@ -185,7 +185,7 @@ void go_room(int room)
         break;
     case ROOM_TAVERN: G.hx = 34;  G.hy = 234; G.dir = 1; break;
     case ROOM_BEACH:  G.hx = 60;  G.hy = 226; G.dir = 1; break;
-    default:          G.hx = 40;  G.hy = 226; G.dir = 1; break;
+    default:          G.hx = 48;  G.hy = 230; G.dir = 1; break;
     }
     mode = MODE_PLAY;
     need_rebuild = 1;
@@ -398,13 +398,59 @@ static void draw_msg(void)
 /* Camminata e azioni                                                  */
 /* ------------------------------------------------------------------ */
 
+static int in_poly(const WalkPoly *p, int x, int y)
+{
+    int i;
+    for (i = 0; i < p->n; i++) {
+        int j = (i + 1) % p->n;
+        long cr = (long)(p->x[j] - p->x[i]) * (y - p->y[i]) - (long)(p->y[j] - p->y[i]) * (x - p->x[i]);
+        if (cr < 0) return 0;               /* a sinistra di un lato: fuori */
+    }
+    return 1;
+}
+
+static int walkable(int x, int y)
+{
+    const WalkArea *w = &walk_areas[G.room];
+    int i;
+    for (i = 0; i < w->npoly; i++)
+        if (in_poly(&w->poly[i], x, y)) return 1;
+    return 0;
+}
+
+/* porta (x,y) nel punto calpestabile piu' vicino */
 static void clamp_walk(short *x, short *y)
 {
     const WalkArea *w = &walk_areas[G.room];
-    if (*x < w->x0) *x = w->x0;
-    if (*x > w->x1) *x = w->x1;
-    if (*y < w->y0) *y = w->y0;
-    if (*y > w->y1) *y = w->y1;
+    long best = -1;
+    int bx = *x, by = *y, i, k, step;
+    if (walkable(*x, *y)) return;
+    for (i = 0; i < w->npoly; i++) {
+        const WalkPoly *p = &w->poly[i];
+        for (k = 0; k < p->n; k++) {
+            int j = (k + 1) % p->n;
+            long ex = p->x[j] - p->x[k], ey = p->y[j] - p->y[k];
+            long len2 = ex * ex + ey * ey, t, qx, qy, d;
+            t = len2 ? ((long)(*x - p->x[k]) * ex + (long)(*y - p->y[k]) * ey) * 1024 / len2 : 0;
+            if (t < 0) t = 0;
+            if (t > 1024) t = 1024;
+            qx = p->x[k] + ex * t / 1024;
+            qy = p->y[k] + ey * t / 1024;
+            d = (qx - *x) * (qx - *x) + (qy - *y) * (qy - *y);
+            if (best < 0 || d < best) { best = d; bx = (int)qx; by = (int)qy; }
+        }
+    }
+    /* gli arrotondamenti possono lasciarlo sul bordo: un passo verso l'interno */
+    for (step = 0; step < 8 && !walkable(bx, by); step++) {
+        const WalkPoly *p = &w->poly[0];
+        int cx = 0, cy = 0;
+        for (k = 0; k < p->n; k++) { cx += p->x[k]; cy += p->y[k]; }
+        cx /= p->n; cy /= p->n;
+        bx += (cx > bx) - (cx < bx);
+        by += (cy > by) - (cy < by);
+    }
+    *x = (short)bx;
+    *y = (short)by;
 }
 
 static void walk_to(int x, int y)
@@ -530,6 +576,14 @@ static void update_walk(void)
         sx = dx > v ? v : (dx < -v ? -v : dx);
     }
     sy = dy > 2 ? 2 : (dy < -2 ? -2 : dy);
+    /* mai fuori dalla zona calpestabile (niente passeggiate sull'acqua):
+       se il passo in diagonale esce, si prova solo in orizzontale o solo
+       in verticale; se nemmeno cosi' si puo', ci si ferma qui */
+    if (!walkable(G.hx + sx, G.hy + sy)) {
+        if (sx && walkable(G.hx + sx, G.hy)) sy = 0;
+        else if (sy && walkable(G.hx, G.hy + sy)) sx = 0;
+        else { tx = G.hx; ty = G.hy; sx = sy = 0; }
+    }
     if (sx > 0) G.dir = 1;
     if (sx < 0) G.dir = -1;
     G.hx = (short)(G.hx + sx);
@@ -1566,6 +1620,8 @@ int game_debug(int what, int arg)
     case DBG_MODAL:  return modal;
     case DBG_DIALOG: return dlg_npc;
     case DBG_REDRAW: need_full = 1; return 0;
+    case DBG_HX:     return G.hx;
+    case DBG_HY:     return G.hy;
     case DBG_SLOT:
         for (i = 0; i < G.ninv; i++) if (G.inv[i] == arg) return i;
         return -1;

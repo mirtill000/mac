@@ -23,7 +23,7 @@ void game_render(void);               /* ridisegna e chiama plat_present */
 int  game_wants_quit(void);
 
 /* introspezione per i test automatici */
-enum { DBG_BUSY, DBG_FLAG, DBG_HAS, DBG_MODE, DBG_ROOM, DBG_SLOT, DBG_MODAL, DBG_DIALOG, DBG_REDRAW };
+enum { DBG_BUSY, DBG_FLAG, DBG_HAS, DBG_MODE, DBG_ROOM, DBG_SLOT, DBG_MODAL, DBG_DIALOG, DBG_REDRAW, DBG_HX, DBG_HY };
 int  game_debug(int what, int arg);
 
 #endif

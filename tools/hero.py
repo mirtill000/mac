@@ -1,198 +1,248 @@
-"""Sprite del protagonista disegnato proceduralmente in pixel art 1-bit.
+"""Sprite del protagonista in pixel art 1-bit.
 
-Il personaggio e' disegnato in un sistema di coordinate "di progetto"
-(alto 100, piedi a y=99) e poi trasformato alla dimensione voluta: cosi'
-ogni misura ha linee nette di 1 pixel invece di un'immagine riscalata.
+Personaggio originale nello stile dei protagonisti delle avventure
+LucasArts dei primi anni '90: aspirante pirata allampanato, capelli biondi
+raccolti in un codino, nasone, camicia bianca con le maniche a sbuffo,
+cintura, pantaloni scuri e stivali.
 
-Valori: 0 trasparente, 1 nero, 2 bianco, 3 grigio chiaro (25%),
-4 grigio scuro (75%), 5 grigio medio (50%). I grigi diventano retini fissi,
-come negli sfondi.
+Metodo (per avere linee nette e regolari a ogni misura):
+  1. si disegnano le PARTI (capelli, viso, camicia...) a risoluzione 4x,
+     senza contorni, in un sistema di coordinate "di progetto" alto 100;
+  2. si riduce alla misura finale scegliendo per ogni pixel la parte
+     prevalente nel blocco 4x4;
+  3. si generano i contorni neri di 1 pixel: attorno alla sagoma e tra
+     parti diverse (viso/capelli, camicia/pantaloni, ...);
+  4. si aggiungono i dettagli da 1 pixel (occhio, bocca, fibbia);
+  5. ogni parte ha un tono: bianco, nero o un retino fisso.
 """
 import math
 import numpy as np
 from PIL import Image, ImageDraw
 
-SX = 1.45                      # allargamento orizzontale del disegno
-HEIGHTS = (92, 108, 124)       # altezze generate (prospettiva)
+SS = 4                          # sovracampionamento del disegno
+SX = 1.3                        # allargamento orizzontale del disegno
+HEIGHTS = (92, 108, 124)        # altezze generate (prospettiva)
 
+# toni finali
 T, K, Wt, LG, DG, MG = 0, 1, 2, 3, 4, 5
+
+# parti: id -> (tono, gruppo per i contorni)
+P_NONE = 0
+HAIR, TAIL, SKIN, SHIRT, SHADE, BACKARM, LEG, BACKLEG, BOOT, BELT, HAT, SLEEVE = range(1, 13)
+PARTS = {
+    HAIR: (LG, 1),      # capelli biondi
+    TAIL: (LG, 1),      # codino
+    SKIN: (Wt, 2),      # viso, collo, mani
+    SHIRT: (Wt, 3),     # camicia
+    SHADE: (LG, 3),     # ombra sulla camicia (stesso gruppo: nessun contorno)
+    SLEEVE: (Wt, 10),   # manica anteriore a sbuffo (contornata sulla camicia)
+    BACKARM: (LG, 4),   # braccio posteriore, in ombra
+    LEG: (DG, 5),       # gamba anteriore
+    BACKLEG: (MG, 6),   # gamba posteriore (piu' chiara: profondita')
+    BOOT: (K, 7),       # stivali
+    BELT: (K, 8),       # cintura
+    HAT: (K, 9),        # tricorno
+}
 
 
 def size_for(h):
     """(larghezza in pixel multipla di 8, altezza) per un'altezza data."""
     s = h / 100.0
-    w = int(math.ceil((44 * SX * s + 6) / 8.0)) * 8
+    w = int(math.ceil((46 * SX * s + 6) / 8.0)) * 8
     return w, h
 
 
 class _Pen:
-    """ImageDraw che porta le coordinate di progetto alla misura finale."""
+    """Porta le coordinate di progetto (alto 100, piedi a y=99, centro x=20)
+    su una tela di w x h pixel."""
 
     def __init__(self, d, w, h):
         self.d, self.w, self.h, self.s = d, w, h, h / 100.0
 
-    def _x(self, x):
+    def x(self, x):
         return (x - 20) * SX * self.s + self.w / 2.0
 
-    def _y(self, y):
+    def y(self, y):
         return (y - 100) * self.s + self.h
 
-    def _pts(self, pts):
-        return [(self._x(x), self._y(y)) for (x, y) in pts]
+    def pts(self, pts):
+        return [(self.x(x), self.y(y)) for (x, y) in pts]
 
-    def polygon(self, pts, **kw):
-        self.d.polygon(self._pts(pts), **kw)
+    def polygon(self, pts, part):
+        self.d.polygon(self.pts(pts), fill=part)
 
-    def line(self, pts, **kw):
-        self.d.line(self._pts(pts), **kw)
-
-    def ellipse(self, box, **kw):
+    def ellipse(self, box, part):
         x0, y0, x1, y1 = box
-        self.d.ellipse((self._x(x0), self._y(y0), self._x(x1), self._y(y1)), **kw)
+        self.d.ellipse((self.x(x0), self.y(y0), self.x(x1), self.y(y1)), fill=part)
 
-    def rectangle(self, box, **kw):
-        x0, y0, x1, y1 = box
-        self.d.rectangle((round(self._x(x0)), round(self._y(y0)),
-                          round(self._x(x1)), round(self._y(y1))), **kw)
-
-
-def _limb(d, x, y, ang1, ang2, l1, l2, w1, w2, fill, shade=None):
-    """Arto a due segmenti; angoli in gradi da verticale (positivo = avanti)."""
-    a1 = math.radians(ang1)
-    a2 = math.radians(ang2)
-    kx, ky = x + math.sin(a1) * l1, y + math.cos(a1) * l1
-    ex, ey = kx + math.sin(a2) * l2, ky + math.cos(a2) * l2
-    for (ax, ay, bx, by, wa, wb) in [(x, y, kx, ky, w1, w2), (kx, ky, ex, ey, w2, w2 - 1)]:
+    def thick(self, a, b, wa, wb, part):
+        """Segmento spesso (larghezze in unita' di progetto) con estremi tondi."""
+        (ax, ay), (bx, by) = a, b
         dx, dy = bx - ax, by - ay
         n = math.hypot(dx, dy) or 1
         px, py = -dy / n, dx / n
-        poly = [(ax + px * wa / 2, ay + py * wa / 2), (bx + px * wb / 2, by + py * wb / 2),
-                (bx - px * wb / 2, by - py * wb / 2), (ax - px * wa / 2, ay - py * wa / 2)]
-        d.polygon(poly, fill=fill, outline=K)
-        if shade is not None:
-            # ombra sul lato posteriore dell'arto
-            sp = [(ax + px * wa / 2, ay + py * wa / 2), (bx + px * wb / 2, by + py * wb / 2),
-                  (bx + px * wb / 6, by + py * wb / 6), (ax + px * wa / 6, ay + py * wa / 6)]
-            d.polygon(sp, fill=shade, outline=K)
-    return ex, ey, kx, ky
+        self.polygon([(ax + px * wa / 2, ay + py * wa / 2), (bx + px * wb / 2, by + py * wb / 2),
+                      (bx - px * wb / 2, by - py * wb / 2), (ax - px * wa / 2, ay - py * wa / 2)], part)
+        for (cx, cy, r) in ((ax, ay, wa / 2), (bx, by, wb / 2)):
+            self.ellipse((cx - r, cy - r, cx + r, cy + r), part)
 
 
-def _boot(d, x, y, fill, cuff):
-    """Stivale: parte dalla caviglia (x,y), la punta guarda a destra."""
-    pts = [(-4, -8), (4, -8), (4, -1), (8, 0), (8, 3), (-4, 3)]
-    d.polygon([(x + px, y + py) for px, py in pts], fill=fill, outline=K)
-    d.line([(x - 4, y - 8), (x + 4, y - 8)], fill=cuff)
+def _joint(x, y, a1, a2, l1, l2):
+    a1, a2 = math.radians(a1), math.radians(a2)
+    kx, ky = x + math.sin(a1) * l1, y + math.cos(a1) * l1
+    return (kx, ky), (kx + math.sin(a2) * l2, ky + math.cos(a2) * l2)
+
+
+def _boot(d, ank, big):
+    x, y = ank
+    e = 0.5 if big else 0
+    d.polygon([(x - 3 - e, y - 7 - e), (x + 3 + e, y - 7 - e), (x + 3.5 + e, y - 1),
+               (x + 7 + e, y + 0.5), (x + 7 + e, y + 3), (x - 3 - e, y + 3)], BOOT)
 
 
 def _draw_hat(d, oy):
-    """Cappello da pirata (tricorno)."""
-    d.polygon([(14, 9 + oy), (15, 1 + oy), (21, 0 + oy), (28, 1 + oy), (29, 9 + oy)], fill=K, outline=K)
-    d.polygon([(8, 7 + oy), (21, 11 + oy), (35, 7 + oy), (33, 12 + oy), (21, 14 + oy), (10, 12 + oy)],
-              fill=K, outline=K)
-    d.line([(10, 9 + oy), (21, 12 + oy), (33, 9 + oy)], fill=Wt)
-    d.rectangle((21, 4 + oy, 22, 5 + oy), fill=Wt)
+    d.polygon([(14, 8 + oy), (15, 0 + oy), (21, -1 + oy), (27, 0 + oy), (28, 8 + oy)], HAT)
+    d.polygon([(8, 7 + oy), (21, 10 + oy), (34, 7 + oy), (32, 12 + oy), (21, 13 + oy), (10, 12 + oy)], HAT)
 
 
-def hat_layers(h):
-    """Il cappello da solo, da disegnare sopra la testa: [fermo, testa abbassata di 1]."""
-    out = []
-    for oy in (0, 1):
-        w, hh = size_for(h)
-        im = Image.new("L", (w, hh), T)
-        _draw_hat(_Pen(ImageDraw.Draw(im), w, hh), oy)
-        out.append(np.array(im))
+def _parts(w, h, legs, arms, bob, hat):
+    """Disegna le parti a risoluzione SS volte maggiore."""
+    W, H = w * SS, h * SS
+    im = Image.new("L", (W, H), P_NONE)
+    d = _Pen(ImageDraw.Draw(im), W, H)
+    oy = bob
+    hip = (20, 55 + oy)
+
+    # gamba e braccio posteriori
+    hb = (hip[0] - 1.5, hip[1])
+    knee, ank = _joint(hb[0], hb[1], legs[0], legs[1], 20, 18)
+    d.thick(hb, knee, 7, 6, BACKLEG)
+    d.thick(knee, ank, 6, 5, BACKLEG)
+    _boot(d, (ank[0], min(ank[1], 96)), False)
+    sh = (18, 31 + oy)
+    elb, hand = _joint(sh[0], sh[1], -arms[0], -arms[0] * 0.6 - 10, 12, 11)
+    d.thick(sh, elb, 6, 5, BACKARM)
+    d.thick(elb, hand, 4.5, 3.5, BACKARM)
+    d.ellipse((hand[0] - 2, hand[1] - 2, hand[0] + 2, hand[1] + 2), SKIN)
+
+    # codino (dietro la testa e il collo)
+    d.polygon([(13, 11 + oy), (16, 12 + oy), (14, 22 + oy), (11, 27 + oy), (9, 26 + oy), (11, 18 + oy)], TAIL)
+
+    # busto: camicia bianca, ombra sulla schiena, cintura
+    d.polygon([(13, 27 + oy), (26, 27 + oy), (28, 37 + oy), (26.5, 53 + oy), (14, 53 + oy), (12, 38 + oy)], SHIRT)
+    d.polygon([(13, 29 + oy), (16, 29 + oy), (16.5, 52 + oy), (14, 52 + oy), (12.5, 38 + oy)], SHADE)
+    d.polygon([(13.5, 51 + oy), (27, 51 + oy), (27, 55 + oy), (13.5, 55 + oy)], BELT)
+
+    # gamba anteriore
+    hf = (hip[0] + 2, hip[1])
+    knee, ank = _joint(hf[0], hf[1], legs[2], legs[3], 20, 18)
+    d.thick(hf, knee, 7.5, 6.5, LEG)
+    d.thick(knee, ank, 6.5, 5.5, LEG)
+    _boot(d, (ank[0], min(ank[1], 96)), True)
+
+    # collo e testa: viso lungo, nasone, mento pronunciato
+    d.polygon([(18, 22 + oy), (22, 22 + oy), (22.5, 28 + oy), (17.5, 28 + oy)], SKIN)
+    d.ellipse((13.5, 3.5 + oy, 27.5, 25 + oy), SKIN)
+    d.polygon([(25, 11 + oy), (31.5, 17 + oy), (30, 18.5 + oy), (25, 18 + oy)], SKIN)
+    d.polygon([(19, 22 + oy), (25, 21 + oy), (24, 25.5 + oy), (19, 25 + oy)], SKIN)
+    # capelli biondi pettinati all'indietro
+    d.polygon([(12, 13 + oy), (12.5, 6 + oy), (16, 2 + oy), (21, 1 + oy), (26, 2.5 + oy), (28.5, 7 + oy),
+               (26, 7.5 + oy), (22, 6.5 + oy), (19, 8 + oy), (17.5, 13 + oy), (16, 18 + oy), (13, 18 + oy)], HAIR)
+    if hat:
+        _draw_hat(d, oy)
+
+    # braccio anteriore: manica a sbuffo e mano
+    sh = (22, 31 + oy)
+    elb, hand = _joint(sh[0], sh[1], arms[1], arms[1] * 0.6 + 8, 12, 11)
+    d.thick(sh, elb, 8, 6.5, SLEEVE)
+    d.thick(elb, hand, 6.5, 4, SLEEVE)
+    d.ellipse((hand[0] - 2.2, hand[1] - 2.2, hand[0] + 2.2, hand[1] + 2.2), SKIN)
+    return np.array(im)
+
+
+def _downsample(P, w, h):
+    """Per ogni blocco SSxSS sceglie la parte prevalente; le parti sottili
+    vincono sul vuoto se coprono almeno 6 sottopixel su 16."""
+    B = P.reshape(h, SS, w, SS).transpose(0, 2, 1, 3).reshape(h, w, SS * SS)
+    counts = np.stack([(B == pid).sum(axis=2) for pid in range(13)], axis=2)
+    nonT = SS * SS - counts[:, :, 0]
+    best = counts[:, :, 1:].argmax(axis=2) + 1
+    out = np.zeros((h, w), np.uint8)
+    out[nonT >= 6] = best[nonT >= 6]
     return out
 
 
-def _hand(d, x, y, r=2.2):
-    d.ellipse((x - r, y - r, x + r, y + r), fill=Wt, outline=K)
+def _render(parts, extra):
+    """Parti -> toni con i contorni; extra = dettagli da 1 pixel [(x, y, tono)]."""
+    h, w = parts.shape
+    tone = np.zeros((h, w), np.uint8)
+    group = np.zeros((h, w), np.uint8)
+    for pid, (tn, gr) in PARTS.items():
+        tone[parts == pid] = tn
+        group[parts == pid] = gr
+    solid = parts != 0
+    out = tone.copy()
+    # contorno esterno: pixel della sagoma che toccano il vuoto
+    edge = np.zeros_like(solid)
+    edge[1:, :] |= solid[1:, :] & ~solid[:-1, :]
+    edge[:-1, :] |= solid[:-1, :] & ~solid[1:, :]
+    edge[:, 1:] |= solid[:, 1:] & ~solid[:, :-1]
+    edge[:, :-1] |= solid[:, :-1] & ~solid[:, 1:]
+    out[edge] = K
+    # contorni interni tra gruppi diversi: si scurisce il pixel del gruppo
+    # con il numero maggiore (cosi' la linea resta di 1 pixel)
+    for dy, dx in ((0, 1), (1, 0)):
+        a = group[:h - dy, :w - dx]
+        b = group[dy:, dx:]
+        diff = (a != b) & (a != 0) & (b != 0)
+        ya, xa = np.nonzero(diff & (a > b))
+        out[ya, xa] = K
+        yb, xb = np.nonzero(diff & (b > a))
+        out[yb + dy, xb + dx] = K
+    for (x, y, tn) in extra:
+        if 0 <= x < w and 0 <= y < h and solid[y, x]:
+            out[y, x] = tn
+    return out
+
+
+def _px(w, h, x, y):
+    s = h / 100.0
+    return (int(round((x - 20) * SX * s + w / 2.0 - 0.5)), int(round((y - 100) * s + h - 0.5)))
 
 
 def frame(h, legs=(0, 0, 0, 0), arms=(0, 0), bob=0, mouth=False, hat=False, blink=False):
-    """legs = (coscia_dietro, stinco_dietro, coscia_avanti, stinco_avanti).
-
-    Look: capelli corti scuri e mossi con le tempie brizzolate, occhiali dalla
-    montatura scura, barba corta sale e pepe, sorriso, giacca blu (retino
-    scuro) sopra la camicia bianca aperta, pantaloni e scarpe scuri."""
+    """legs = (coscia_dietro, stinco_dietro, coscia_avanti, stinco_avanti)."""
     w, h = size_for(h)
-    im = Image.new("L", (w, h), T)
-    d = _Pen(ImageDraw.Draw(im), w, h)
+    parts = _downsample(_parts(w, h, legs, arms, bob, hat), w, h)
     oy = bob
-    hipy = 57 + oy
-
-    # gamba e braccio posteriori (in ombra)
-    ex, ey, _, _ = _limb(d, 18, hipy, legs[0], legs[1], 18, 15, 8, 7, DG)
-    _boot(d, ex, min(ey, 96), DG, DG)
-    hx, hy, _, _ = _limb(d, 17, 31 + oy, -arms[0], -arms[0] * 0.6 - 8, 12, 11, 6, 5, K)
-    _hand(d, hx, hy)
-
-    # giacca blu (retino scuro) con la camicia bianca che si vede davanti
-    d.polygon([(11, 29 + oy), (28, 29 + oy), (30, 44 + oy), (29, 60 + oy), (12, 60 + oy), (10, 44 + oy)],
-              fill=DG, outline=K)
-    d.polygon([(21, 29 + oy), (28, 29 + oy), (29, 37 + oy), (26, 50 + oy), (22, 40 + oy)],
-              fill=Wt, outline=K)                                          # camicia
-    d.line([(22, 29 + oy), (24, 37 + oy), (23, 44 + oy)], fill=K)          # bavero
-    d.line([(21, 31 + oy), (21, 56 + oy)], fill=K)                         # profilo della giacca
-    d.rectangle((24, 50 + oy, 25, 51 + oy), fill=K)                        # bottone
-    d.line([(14, 44 + oy), (19, 44 + oy)], fill=K)                         # tasca
-
-    # gamba anteriore (pantaloni scuri)
-    ex, ey, kx, ky = _limb(d, 22, hipy, legs[2], legs[3], 18, 15, 8, 7, K)
-    _boot(d, ex, min(ey, 96), K, K)
-
-    # collo con il colletto aperto della camicia
-    d.rectangle((18, 24 + oy, 23, 30 + oy), fill=Wt, outline=K)
-    d.polygon([(18, 27 + oy), (22, 31 + oy), (25, 27 + oy), (24, 32 + oy), (19, 32 + oy)], fill=Wt, outline=K)
-
-    # testa
-    d.ellipse((13, 5 + oy, 30, 27 + oy), fill=Wt, outline=K)
-    d.polygon([(29, 13 + oy), (32, 18 + oy), (29, 19 + oy)], fill=Wt, outline=K)        # naso
-    d.ellipse((15, 12 + oy, 19, 18 + oy), fill=Wt, outline=K)                          # orecchio
-    # barba corta sale e pepe: guancia, mascella e mento
-    d.polygon([(15, 17 + oy), (19, 19 + oy), (23, 20 + oy), (27, 20 + oy), (30, 20 + oy),
-               (30, 24 + oy), (27, 27 + oy), (21, 27 + oy), (16, 24 + oy)], fill=MG, outline=K)
-    # sorriso (o bocca aperta quando parla)
+    extra = []
+    ex, ey = _px(w, h, 23.5, 12.5 + oy)                           # occhio
+    extra += [(ex - 1, ey, K), (ex, ey, K)] if blink else [(ex, ey, K), (ex, ey + 1, K)]
+    bx, by = _px(w, h, 22.5, 10.5 + oy)                           # sopracciglio
+    extra += [(bx, by, K), (bx + 1, by, K)]
+    mx, my = _px(w, h, 24, 20.5 + oy)                             # bocca
+    extra += [(mx, my, K), (mx + 1, my, K)]
     if mouth:
-        d.polygon([(23, 20 + oy), (30, 20 + oy), (29, 25 + oy), (25, 25 + oy)], fill=K, outline=K)
-        d.line([(24, 21 + oy), (29, 21 + oy)], fill=Wt)                                # denti
-    else:
-        # sorriso largo con i denti in vista
-        d.polygon([(23, 20 + oy), (30, 20 + oy), (28, 23 + oy), (25, 23 + oy)], fill=Wt, outline=K)
-    d.line([(23, 19 + oy), (30, 19 + oy)], fill=K)                                     # baffi
-    # capelli corti, scuri e mossi, tempie grigie
-    d.polygon([(13, 15 + oy), (12, 9 + oy), (14, 5 + oy), (18, 2 + oy), (23, 1 + oy), (28, 2 + oy),
-               (30, 5 + oy), (29, 9 + oy), (27, 8 + oy), (24, 9 + oy), (20, 9 + oy), (18, 12 + oy),
-               (16, 12 + oy), (15, 16 + oy)], fill=DG, outline=K)
-    for cx, cy in ((16, 4), (21, 2), (26, 3), (29, 6), (14, 9)):
-        d.ellipse((cx - 1.5, cy - 1 + oy, cx + 1.5, cy + 1.5 + oy), fill=K, outline=None)  # riccioli
-    d.polygon([(14, 11 + oy), (16, 11 + oy), (16, 16 + oy), (14, 16 + oy)], fill=LG, outline=None)  # tempia
-    # occhiali dalla montatura scura
-    d.rectangle((23, 11 + oy, 29, 16 + oy), fill=Wt, outline=K)
-    d.line([(23, 12 + oy), (18, 13 + oy)], fill=K)                                     # stanghetta
-    if blink:
-        d.line([(25, 14 + oy), (27, 14 + oy)], fill=K)
-    else:
-        d.rectangle((26, 13 + oy, 26, 14 + oy), fill=K)
-    d.line([(23, 10 + oy), (28, 9 + oy)], fill=K)                                      # sopracciglio
-    if hat:
-        _draw_hat(d, oy)
-    # braccio anteriore: manica della giacca e mano
-    hx, hy, _, _ = _limb(d, 23, 32 + oy, arms[1], arms[1] * 0.6 + 6, 12, 11, 7, 6, DG)
-    _hand(d, hx, hy)
-    return np.array(im)
+        extra += [(mx, my + 1, K), (mx + 1, my + 1, K)]
+    ex_, ey_ = _px(w, h, 16.5, 14 + oy)                           # orecchio
+    extra += [(ex_, ey_, K), (ex_, ey_ + 1, K)]
+    cx, cy = _px(w, h, 22, 28 + oy)                               # scollo della camicia
+    extra += [(cx, cy, K), (cx + 1, cy + 1, K), (cx + 2, cy, K)]
+    fx, fy = _px(w, h, 22, 53 + oy)                               # fibbia
+    extra += [(fx, fy, Wt), (fx + 1, fy, Wt)]
+    return _render(parts, extra)
 
 
 # ciclo di camminata a 6 fotogrammi
 WALK = [
-    dict(legs=(-22, -10, 22, 10), arms=(18, -18), bob=1),
-    dict(legs=(-12, 0, 12, 22), arms=(10, -10), bob=0),
-    dict(legs=(0, 10, 0, 0), arms=(0, 0), bob=0),
-    dict(legs=(22, 10, -22, -10), arms=(-18, 18), bob=1),
-    dict(legs=(12, 22, -12, 0), arms=(-10, 10), bob=0),
-    dict(legs=(0, 0, 0, 10), arms=(0, 0), bob=0),
+    dict(legs=(-24, -8, 24, 6), arms=(20, -20), bob=1),
+    dict(legs=(-12, 4, 12, 26), arms=(10, -10), bob=0),
+    dict(legs=(0, 14, 0, 0), arms=(0, 0), bob=0),
+    dict(legs=(24, 6, -24, -8), arms=(-20, 20), bob=1),
+    dict(legs=(12, 26, -12, 4), arms=(-10, 10), bob=0),
+    dict(legs=(0, 0, 0, 14), arms=(0, 0), bob=0),
 ]
-STAND = dict(legs=(-4, -2, 5, 2), arms=(4, -4), bob=0)
-FRAMES_PER_HAT = 9       # fermo, parla, 6 camminata, occhi chiusi
+STAND = dict(legs=(-3, -1, 4, 1), arms=(4, -4), bob=0)
 
 
 def all_frames(h, hat=False):
@@ -206,6 +256,19 @@ def all_frames(h, hat=False):
 
 # fotogrammi in cui la testa e' abbassata di 1 (per posare il cappello)
 HEAD_DOWN = [0, 0, 1, 0, 0, 1, 0, 0, 0]
+
+
+def hat_layers(h):
+    """Il tricorno da solo: [testa normale, testa abbassata di 1]."""
+    out = []
+    w, hh = size_for(h)
+    for oy in (0, 1):
+        P = Image.new("L", (w * SS, hh * SS), P_NONE)
+        _draw_hat(_Pen(ImageDraw.Draw(P), w * SS, hh * SS), oy)
+        parts = _downsample(np.array(P), w, hh)
+        tx, ty = _px(w, hh, 21, 4 + oy)
+        out.append(_render(parts, [(tx, ty, Wt), (tx + 1, ty, Wt)]))
+    return out
 
 
 def to_bits(a):
@@ -248,13 +311,17 @@ if __name__ == "__main__":
     import sys
     tiles = []
     for h in HEIGHTS:
-        for f in all_frames(h)[:9]:
+        fr = all_frames(h)
+        hats = hat_layers(h)
+        fr.append(np.where(hats[0] != T, hats[0], fr[0]))
+        for f in fr:
             b, m = to_bits(f)
             tiles.append(np.where(m, np.where(b, 0, 255), 160).astype(np.uint8))
+    n = 10
     W = max(t.shape[1] for t in tiles) + 4
     H = max(t.shape[0] for t in tiles) + 4
-    out = np.full((H * len(HEIGHTS), W * 9), 200, np.uint8)
+    out = np.full((H * len(HEIGHTS), W * n), 200, np.uint8)
     for i, t in enumerate(tiles):
-        r, c = divmod(i, 9)
+        r, c = divmod(i, n)
         out[r * H + H - 2 - t.shape[0]:r * H + H - 2, c * W + 2:c * W + 2 + t.shape[1]] = t
     Image.fromarray(out).resize((out.shape[1] * 2, out.shape[0] * 2), Image.NEAREST).save(sys.argv[1])

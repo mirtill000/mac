@@ -48,7 +48,7 @@ const Hotspot hotspots[] = {
     { H_MOZZO,      ROOM_DOCK,   "Mozzo Pino",       333, 126,  40,  76, 312, 214,  1, -1 },
     { H_GABBIANO,   ROOM_DOCK,   "gabbiano",          84, 152,  32,  32, 132, 222, -1, -1 },
     { H_BANCARELLA, ROOM_DOCK,   "bancarella",       235, 101,  75,  95, 270, 210,  1, -1 },
-    { H_VELIERO,    ROOM_DOCK,   "veliero",            0,  26,  84, 115,  60, 210, -1, -1 },
+    { H_VELIERO,    ROOM_DOCK,   "veliero",            0,  26,  84, 115,  60, 222, -1, -1 },
     { H_PAESE,      ROOM_DOCK,   "Puerto Polli",     150,  10, 180,  80,  -1,   0,  0, -1 },
     { H_SENTIERO_D, ROOM_DOCK,   "sentiero",           0, 190,  18,  50,  10, 226, -1, ROOM_MAP },
 
@@ -72,18 +72,23 @@ const Hotspot hotspots[] = {
 
     { H_CUSTODE,    ROOM_NIGHT,  "pollo gigante",    314,  92, 104, 128, 274, 224,  1, -1 },
     { H_LUNA,       ROOM_NIGHT,  "luna",              92,  75,  40,  36,  -1,   0,  0, -1 },
-    { H_NAVE_F,     ROOM_NIGHT,  "nave fantasma",     17, 105,  62,  60,  60, 222, -1, -1 },
+    { H_NAVE_F,     ROOM_NIGHT,  "nave fantasma",     17, 105,  62,  60,  60, 230, -1, -1 },
     { H_BITTA,      ROOM_NIGHT,  "bitta",            262, 160,  34,  54, 250, 226,  1, -1 },
     { H_PALMA,      ROOM_NIGHT,  "palma",            420,  10,  92, 220,  -1,   0,  0, -1 },
-    { H_SENTIERO_N, ROOM_NIGHT,  "sentiero",           0, 185,  18,  55,  12, 226, -1, ROOM_MAP },
+    { H_SENTIERO_N, ROOM_NIGHT,  "sentiero",           0, 185,  40,  55,  44, 230, -1, ROOM_MAP },
 };
 const int hotspot_count = sizeof(hotspots) / sizeof(hotspots[0]);
 
 const WalkArea walk_areas[ROOM_COUNT] = {
-    {  8, 200, 505, 236 },     /* molo     */
-    { 10, 230, 228, 238 },     /* taberna: davanti al bancone */
-    { 40, 200, 470, 236 },     /* spiaggia */
-    { 10, 206, 300, 236 },     /* notte    */
+    /* molo: le assi; a sinistra il bordo scende in diagonale verso il mare */
+    { 1, { { 5, {   8, 232, 505, 505,   8 }, { 218, 201, 200, 236, 236 } } } },
+    /* taberna: davanti al bancone */
+    { 1, { { 4, {  10, 228, 228,  10 },      { 230, 230, 238, 238 } } } },
+    /* spiaggia: la sabbia, fino al relitto */
+    { 1, { { 4, {  40, 455, 455,  40 },      { 198, 198, 236, 236 } } } },
+    /* rovine: pontile a "L" (striscia in basso + piattaforma della bitta) */
+    { 2, { { 4, {  40, 216, 216,  40 },      { 224, 224, 237, 237 } },
+           { 4, { 200, 300, 300, 200 },      { 206, 206, 237, 237 } } } },
 };
 
 /* prospettiva: { y lontano, altezza lontano, y vicino, altezza vicino } */

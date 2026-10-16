@@ -8,7 +8,9 @@ Le scene sono animate con discrezione (al massimo due effetti per scena):
 il mare ondeggia, un gabbiano attraversa il cielo, le stelle brillano, la
 lanterna della Taberna tremola e i personaggi annuiscono quando parlano.
 Il protagonista cambia dimensione con la profondità, proietta un'ombra a
-terra e ogni tanto sbatte le palpebre.
+terra e ogni tanto sbatte le palpebre. Cammina solo dove c'è davvero il
+pavimento: le zone calpestabili sono poligoni che seguono il bordo del molo,
+la sabbia e il pontile (tabella `walk_areas` in `src/script.c`).
 La grafica nasce dai mockup in [`reference/mockup.png`](reference/mockup.png):
 le scene vengono ritagliate, ripulite e convertite in 1-bit con il
 dithering di Atkinson (quello di MacPaint).
@@ -128,7 +130,7 @@ salvare schermate in formato PBM.
 | `src/sdl/main_sdl.c` | versione PC con SDL2 |
 | `src/test/main_test.c` | test automatico della soluzione |
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
-| `tools/hero.py` | sprite del protagonista: 3 misure (prospettiva) × 9 fotogrammi, più il cappello come strato a parte |
+| `tools/hero.py` | sprite del protagonista (aspirante pirata biondo col codino, nello stile delle avventure LucasArts): disegnato per parti a risoluzione 4×, ridotto e contornato a 1 pixel; 3 misure × 9 fotogrammi, più il cappello come strato a parte |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.

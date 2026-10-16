@@ -62,7 +62,11 @@ typedef struct {
     signed char exit_to;       /* -1, oppure stanza / ROOM_MAP */
 } Hotspot;
 
-typedef struct { short x0, y0, x1, y1; } WalkArea;
+/* Zona calpestabile: unione di (al massimo 2) poligoni convessi, vertici
+   in senso orario sullo schermo. Il protagonista non ne esce mai. */
+#define WALK_MAX_PTS 6
+typedef struct { signed char n; short x[WALK_MAX_PTS], y[WALK_MAX_PTS]; } WalkPoly;
+typedef struct { signed char npoly; WalkPoly poly[2]; } WalkArea;
 
 /* prospettiva: altezza del protagonista in funzione della y dei piedi */
 typedef struct { short y_far, h_far, y_near, h_near; } RoomDepth;
