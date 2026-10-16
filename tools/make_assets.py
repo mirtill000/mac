@@ -197,6 +197,30 @@ def scene_map(g):
 
 
 # ---------------------------------------------------------------------------
+# Animazioni
+# ---------------------------------------------------------------------------
+
+LANTERN_RECT = (168, 96, 232, 168)        # allineato al byte
+LANTERN_LEVELS = (0, 26, -18, 12)
+
+
+def find_stars(bits):
+    """Stelle = piccoli gruppi di pixel bianchi isolati nel cielo notturno."""
+    sky = (~bits[0:112, 0:340]).astype(np.uint8)
+    sky[:6, :] = 0                              # bordo dello schermo
+    sky[66:112, 80:142] = 0                     # la luna non e' una stella
+    n, lab, st, cen = cv2.connectedComponentsWithStats(sky, connectivity=8)
+    out = []
+    for i in range(1, n):
+        x, y, w, h, area = st[i]
+        if 1 <= area <= 9 and w <= 5 and h <= 5 and 4 <= x < 336:
+            cx, cy = int(cen[i][0]), int(cen[i][1])
+            out.append((cx - cx % 2, cy))
+    out.sort(key=lambda p: (p[1], p[0]))
+    return out[:32]
+
+
+# ---------------------------------------------------------------------------
 # Icone (ritagliate dalla finestra "Inventario" del mockup)
 # ---------------------------------------------------------------------------
 
@@ -300,6 +324,7 @@ def main():
 
     g = load_gray()
     scenes = {}
+    grays = {}
     for name, fn, w, h, lo, hi, gm in [
         ("dock", scene_dock, SCREEN_W, SCENE_H, 30, 215, 1.0),
         ("tavern", scene_tavern, SCREEN_W, SCENE_H, 10, 175, 0.75),
@@ -314,6 +339,7 @@ def main():
         bits = atkinson(img)
         save_preview(name, bits)
         scenes[name] = bits
+        grays[name] = img
 
     small, big = icons(g)
     for i, n in enumerate(ICON_NAMES):
@@ -322,7 +348,22 @@ def main():
     font = make_font("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf")
     bold = make_font("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf")
 
-    frames = hero.all_frames()
+    # --- protagonista in piu' misure (prospettiva) ---
+    hero_sizes = [(hh, hero.all_frames(hh)) for hh in hero.HEIGHTS]
+    nframes = len(hero_sizes[0][1])
+
+    # --- varianti di luce della lanterna della Taberna (tremolio) ---
+    lantern = []
+    lx0, ly0, lx1, ly1 = LANTERN_RECT
+    yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
+    fall = np.clip(1.0 - np.hypot(xx - 198, (yy - 128) * 1.2) / 38.0, 0, 1)
+    for delta in LANTERN_LEVELS:
+        v = atkinson(np.clip(grays["tavern"] + delta * fall, 0, 255))
+        lantern.append(v[ly0:ly1, lx0:lx1])
+    save_preview("lantern", np.hstack(lantern))
+
+    # --- stelle del cielo notturno (per lo scintillio) ---
+    stars = find_stars(scenes["night"])
 
     src = os.path.join(ROOT, "src")
     with open(os.path.join(src, "assets.c"), "w") as f:
@@ -373,19 +414,48 @@ def main():
         for i in range(8):
             f.write("  { %d, %d, %d, icons_big + %d },\n" % (ICON_BIG, ICON_BIG, rbb, i * rbb * ICON_BIG))
         f.write("};\n\n")
-        # sprite protagonista: per ogni frame bitmap nero + maschera
-        hdata = b""
-        for fr in frames:
-            b, m = hero.to_bits(fr)
-            hdata += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
-        c_array("hero_data", hdata, f)
-        hrb = (hero.W + 7) // 8
-        fsz = hrb * hero.H
-        f.write("const Sprite asset_hero[HERO_FRAMES] = {\n")
-        for i in range(len(frames)):
-            f.write("  { %d, %d, %d, hero_data + %d, hero_data + %d },\n" %
-                    (hero.W, hero.H, hrb, i * 2 * fsz, i * 2 * fsz + fsz))
+        # sprite protagonista: per ogni misura e fotogramma bitmap nero + maschera
+        f.write("/* protagonista: %d misure x %d fotogrammi */\n" % (len(hero_sizes), nframes))
+        for si, (hh, frames) in enumerate(hero_sizes):
+            w, h = hero.size_for(hh)
+            rb = w // 8
+            fsz = rb * h
+            hdata = b""
+            for fr in frames:
+                b, m = hero.to_bits(fr)
+                hdata += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
+            c_array("hero_%d" % hh, hdata, f)
+            f.write("static const Sprite hero_%d_frames[HERO_FRAMES] = {\n" % hh)
+            for i in range(nframes):
+                f.write("  { %d, %d, %d, hero_%d + %d, hero_%d + %d },\n" %
+                        (w, h, rb, hh, i * 2 * fsz, hh, i * 2 * fsz + fsz))
+            f.write("};\n")
+        f.write("const Sprite *const asset_hero[HERO_SIZES] = {\n")
+        for hh, _ in hero_sizes:
+            f.write("  hero_%d_frames,\n" % hh)
+        f.write("};\nconst short asset_hero_height[HERO_SIZES] = { %s };\n\n" %
+                ", ".join(str(hh) for hh, _ in hero_sizes))
+
+        # gabbiano in volo (16 x 5, due fotogrammi)
+        gdata = b"".join(bits_to_bytes(gb)[0].tobytes() for gb in hero.gull_bits())
+        c_array("gull_data", gdata, f)
+        f.write("const unsigned char *const asset_gull = gull_data;\n\n")
+
+        # lanterna: varianti opache allineate al byte
+        ldata = b"".join(bits_to_bytes(v)[0].tobytes() for v in lantern)
+        c_array("lantern_data", ldata, f)
+        f.write("const Bitmap asset_lantern[LANTERN_FRAMES] = {\n")
+        lrb = (lx1 - lx0) // 8
+        for i in range(len(lantern)):
+            f.write("  { %d, %d, %d, lantern_data + %d },\n" % (lx1 - lx0, ly1 - ly0, lrb, i * lrb * (ly1 - ly0)))
         f.write("};\n\n")
+
+        # stelle
+        f.write("const unsigned char asset_stars[STAR_COUNT][2] = {\n")
+        for (sx, sy) in stars:
+            f.write("  { %d, %d },\n" % (sx // 2, sy))
+        f.write("};\n\n")
+
         # font
         for fname, gl in (("font_regular", font), ("font_bold", bold)):
             data = bytearray()
@@ -413,9 +483,15 @@ enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT, BG_COUNT };
 #define ITEM_ICON_COUNT 8
 #define ICON_SMALL %d
 #define ICON_BIG %d
-#define HERO_FRAMES %d
-#define HERO_W %d
-#define HERO_H %d
+#define HERO_SIZES %d
+#define HERO_FRAMES %d          /* 9 senza cappello + 9 con il cappello */
+#define HERO_MAX_W %d
+#define LANTERN_X %d
+#define LANTERN_Y %d
+#define LANTERN_FRAMES %d
+#define STAR_COUNT %d           /* coordinate: x/2, y */
+#define GULL_W 16
+#define GULL_H 5
 #define FONT_W %d
 #define FONT_H %d
 #define FONT_FIRST 32
@@ -426,11 +502,17 @@ extern const PackedBitmap asset_bg[BG_COUNT];
 extern const Bitmap asset_icon_small[ITEM_ICON_COUNT];
 extern const Bitmap asset_icon_big[ITEM_ICON_COUNT];
 extern const unsigned char *const asset_icon_mask; /* ICON_SMALL x ICON_SMALL ciascuna */
-extern const Sprite asset_hero[HERO_FRAMES];
+extern const Sprite *const asset_hero[HERO_SIZES];
+extern const short asset_hero_height[HERO_SIZES];
+extern const unsigned char *const asset_gull;          /* 2 fotogrammi, 2 byte per riga */
+extern const Bitmap asset_lantern[LANTERN_FRAMES];
+extern const unsigned char asset_stars[STAR_COUNT][2];
 extern const unsigned char *const asset_font[2];
 
 #endif
-""" % (ICON_SMALL, ICON_BIG, len(frames), hero.W, hero.H, FONT_W, FONT_H))
+""" % (ICON_SMALL, ICON_BIG, len(hero_sizes), nframes,
+       max(hero.size_for(hh)[0] for hh in hero.HEIGHTS), lx0, ly0, len(lantern), len(stars),
+       FONT_W, FONT_H))
 
 
 if __name__ == "__main__":

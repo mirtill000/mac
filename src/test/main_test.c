@@ -130,7 +130,7 @@ int main(int argc, char **argv)
 {
     if (argc > 1) outdir = argv[1];
     game_init();
-    frames(2);
+    frames(80);                /* il titolo e' animato: mare e gabbiano */
     shot("01_titolo");
 
     printf("Nuova partita\n");
@@ -278,7 +278,7 @@ int main(int argc, char **argv)
     hot(H_CUSTODE);
     settle_skip();
     CHECK(game_debug(DBG_FLAG, F_GAME_WON), "partita vinta");
-    frames(3);
+    frames(60);
     CHECK(game_debug(DBG_MODE, 0) == 3, "schermata finale");
     shot("13_fine");
 

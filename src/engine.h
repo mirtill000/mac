@@ -64,6 +64,9 @@ typedef struct {
 
 typedef struct { short x0, y0, x1, y1; } WalkArea;
 
+/* prospettiva: altezza del protagonista in funzione della y dei piedi */
+typedef struct { short y_far, h_far, y_near, h_near; } RoomDepth;
+
 /* ---- chi parla --------------------------------------------------- */
 enum { SP_HERO, SP_OSTE, SP_BARBA, SP_MOZZO, SP_CUSTODE, SP_GABBIANO,
        SP_NARRATORE, SP_COUNT };
@@ -99,6 +102,7 @@ void draw_prop(int item, int x, int y);
 extern const Hotspot hotspots[];
 extern const int hotspot_count;
 extern const WalkArea walk_areas[ROOM_COUNT];
+extern const RoomDepth room_depth[ROOM_COUNT];
 extern const char *const speaker_names[SP_COUNT];
 extern const char *const verb_names[V_COUNT + 1];
 

@@ -4,6 +4,11 @@
 
 Grafica 1-bit, risoluzione 512 × 342, interfaccia a nove verbi, inventario,
 dialoghi a scelta multipla, mappa dell'isola, salvataggi e tanto umorismo.
+Le scene sono animate: il mare ondeggia, palme e velieri dondolano al vento,
+i gabbiani attraversano il cielo, le stelle brillano, la lanterna della
+Taberna tremola e i personaggi respirano e annuiscono quando parlano.
+Il protagonista cambia dimensione con la profondità, proietta un'ombra a
+terra e ogni tanto sbatte le palpebre.
 La grafica nasce dai mockup in [`reference/mockup.png`](reference/mockup.png):
 le scene vengono ritagliate, ripulite e convertite in 1-bit con il
 dithering di Atkinson (quello di MacPaint).
@@ -116,18 +121,23 @@ salvare schermate in formato PBM.
 | --- | --- |
 | `src/engine.c` | motore: camminata, verbi, inventario, messaggi, dialoghi, mappa, finestre, salvataggi, rendering incrementale |
 | `src/script.c` | la storia: stanze, oggetti cliccabili, testi, enigmi, dialoghi |
+| `src/anim.c` | animazioni degli sfondi: onde, oscillazioni, respiro dei personaggi, lanterna, stelle, gabbiani |
 | `src/gfx.c` | grafica 1-bit su framebuffer in formato BitMap QuickDraw (512×342, 64 byte per riga) |
 | `src/assets.c` | **generato**: sfondi compressi PackBits, icone, sprite, font |
 | `src/mac/main_mac.c` | Toolbox Macintosh: finestra, eventi, CopyBits, File Manager |
 | `src/sdl/main_sdl.c` | versione PC con SDL2 |
 | `src/test/main_test.c` | test automatico della soluzione |
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
-| `tools/hero.py` | sprite del protagonista (16 fotogrammi, con e senza cappello) |
+| `tools/hero.py` | sprite del protagonista: 4 misure (prospettiva) × 18 fotogrammi, con e senza cappello |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.
 Per restare veloce su un 68000 a 8 MHz ridisegna ogni fotogramma solo le zone
-cambiate (protagonista, box dei dialoghi, pannello).
+cambiate (protagonista, box dei dialoghi, pannello, zone animate) e le porta a
+video con più `CopyBits` piccoli invece di uno grande. Le animazioni
+lavorano su una copia dello sfondo, così il protagonista ci passa davanti
+senza sfarfallii; le zone animate sono elencate in `src/script.c`
+(tabella `anims`), dove si possono aggiungere o regolare.
 
 ### Rigenerare la grafica
 

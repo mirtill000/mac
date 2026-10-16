@@ -10,9 +10,15 @@ enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT, BG_COUNT };
 #define ITEM_ICON_COUNT 8
 #define ICON_SMALL 32
 #define ICON_BIG 44
-#define HERO_FRAMES 16
-#define HERO_W 56
-#define HERO_H 100
+#define HERO_SIZES 4
+#define HERO_FRAMES 18          /* 9 senza cappello + 9 con il cappello */
+#define HERO_MAX_W 88
+#define LANTERN_X 168
+#define LANTERN_Y 96
+#define LANTERN_FRAMES 4
+#define STAR_COUNT 32           /* coordinate: x/2, y */
+#define GULL_W 16
+#define GULL_H 5
 #define FONT_W 7
 #define FONT_H 14
 #define FONT_FIRST 32
@@ -23,7 +29,11 @@ extern const PackedBitmap asset_bg[BG_COUNT];
 extern const Bitmap asset_icon_small[ITEM_ICON_COUNT];
 extern const Bitmap asset_icon_big[ITEM_ICON_COUNT];
 extern const unsigned char *const asset_icon_mask; /* ICON_SMALL x ICON_SMALL ciascuna */
-extern const Sprite asset_hero[HERO_FRAMES];
+extern const Sprite *const asset_hero[HERO_SIZES];
+extern const short asset_hero_height[HERO_SIZES];
+extern const unsigned char *const asset_gull;          /* 2 fotogrammi, 2 byte per riga */
+extern const Bitmap asset_lantern[LANTERN_FRAMES];
+extern const unsigned char asset_stars[STAR_COUNT][2];
 extern const unsigned char *const asset_font[2];
 
 #endif

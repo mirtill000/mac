@@ -12,6 +12,7 @@
  */
 #include "engine.h"
 #include "assets.h"
+#include "anim.h"
 
 /* ------------------------------------------------------------------ */
 /* Dati                                                               */
@@ -51,13 +52,13 @@ const Hotspot hotspots[] = {
     { H_PAESE,      ROOM_DOCK,   "Puerto Polli",     150,  10, 180,  80,  -1,   0,  0, -1 },
     { H_SENTIERO_D, ROOM_DOCK,   "sentiero",           0, 190,  18,  50,  10, 226, -1, ROOM_MAP },
 
-    { H_OSTE,       ROOM_TAVERN, "oste",             307, 113,  99,  98, 290, 234,  1, -1 },
+    { H_OSTE,       ROOM_TAVERN, "oste",             307, 113,  99,  98, 204, 234,  1, -1 },
     { H_BANDIERA,   ROOM_TAVERN, "bandiera",          10,  51,  60,  77,  70, 234, -1, -1 },
     { H_QUADRO,     ROOM_TAVERN, "quadretto",         19, 140,  32,  32,  70, 234, -1, -1 },
     { H_LANTERNA,   ROOM_TAVERN, "lanterna",         182, 106,  34,  50, 190, 234,  1, -1 },
-    { H_FINESTRA,   ROOM_TAVERN, "finestra",         258, 103,  42,  45, 250, 234,  1, -1 },
-    { H_BOTTIGLIE,  ROOM_TAVERN, "bottiglie",        461,  41,  51, 140, 300, 234,  1, -1 },
-    { H_BOCCALE,    ROOM_TAVERN, "boccale",          242, 174,  34,  32, 240, 234,  1, -1 },
+    { H_FINESTRA,   ROOM_TAVERN, "finestra",         258, 103,  42,  45, 214, 234,  1, -1 },
+    { H_BOTTIGLIE,  ROOM_TAVERN, "bottiglie",        461,  41,  51, 140, 220, 234,  1, -1 },
+    { H_BOCCALE,    ROOM_TAVERN, "boccale",          242, 174,  34,  32, 214, 234,  1, -1 },
     { H_USCITA_T,   ROOM_TAVERN, "uscita",             0, 150,  22,  90,  12, 234, -1, ROOM_DOCK },
 
     { H_CAPPELLO,   ROOM_BEACH,  "cappello",         372, 180,  30,  26, 352, 232,  1, -1 },
@@ -69,7 +70,7 @@ const Hotspot hotspots[] = {
     { H_MARE,       ROOM_BEACH,  "mare",             370, 121, 142,  45,  -1,   0,  0, -1 },
     { H_SENTIERO_B, ROOM_BEACH,  "sentiero",           0, 180,  30,  60,  42, 226, -1, ROOM_MAP },
 
-    { H_CUSTODE,    ROOM_NIGHT,  "pollo gigante",    314,  92, 104, 128, 292, 224,  1, -1 },
+    { H_CUSTODE,    ROOM_NIGHT,  "pollo gigante",    314,  92, 104, 128, 274, 224,  1, -1 },
     { H_LUNA,       ROOM_NIGHT,  "luna",              92,  75,  40,  36,  -1,   0,  0, -1 },
     { H_NAVE_F,     ROOM_NIGHT,  "nave fantasma",     17, 105,  62,  60,  60, 222, -1, -1 },
     { H_BITTA,      ROOM_NIGHT,  "bitta",            262, 160,  34,  54, 250, 226,  1, -1 },
@@ -80,10 +81,53 @@ const int hotspot_count = sizeof(hotspots) / sizeof(hotspots[0]);
 
 const WalkArea walk_areas[ROOM_COUNT] = {
     {  8, 200, 505, 236 },     /* molo     */
-    { 10, 230, 300, 238 },     /* taberna  */
+    { 10, 230, 228, 238 },     /* taberna: davanti al bancone */
     { 40, 200, 470, 236 },     /* spiaggia */
     { 10, 206, 300, 236 },     /* notte    */
 };
+
+/* prospettiva: { y lontano, altezza lontano, y vicino, altezza vicino } */
+const RoomDepth room_depth[ROOM_COUNT] = {
+    { 200,  96, 236, 112 },    /* molo     */
+    { 230, 124, 238, 124 },    /* taberna  */
+    { 200,  88, 236, 100 },    /* spiaggia */
+    { 206, 100, 236, 112 },    /* notte    */
+};
+
+/* Animazioni degli sfondi (vedi anim.h). x0 e x1 multipli di 8. */
+const Anim anims[] = {
+    /* scena          tipo        x0   y0   x1   y1   p1          p2   p3 */
+    /* titolo: mare, veliero, gabbiano */
+    { SCENE_TITLE,  AN_WAVE,      0, 238, 512, 342, 2,          12,  3 },
+    { SCENE_TITLE,  AN_SWAY,     88, 200, 136, 240, 1,          80,  0 },
+    { SCENE_TITLE,  AN_FLYER,     0, 158, 512, 196, 2,           0,  0 },
+
+    /* molo: mare, veliero che dondola, gabbiano, pirati che respirano */
+    { ROOM_DOCK,    AN_WAVE,      0, 142,  80, 178, 1,          10,  3 },
+    { ROOM_DOCK,    AN_WAVE,    120, 128, 232, 182, 1,          10,  3 },
+    { ROOM_DOCK,    AN_SWAY,      0,  18,  88, 132, 2,          90,  0 },
+    { ROOM_DOCK,    AN_BOB,      80, 150, 120, 182, -1,         30,  1 },
+    { ROOM_DOCK,    AN_BOB,     424, 140, 496, 196, SP_BARBA,   40,  1 },
+    { ROOM_DOCK,    AN_BOB,     328, 126, 376, 178, SP_MOZZO,   35,  1 },
+    { ROOM_DOCK,    AN_FLYER,     0,   8, 512,  40, 3,           0,  0 },
+
+    /* taberna: lanterna che tremola, oste */
+    { ROOM_TAVERN,  AN_FLICKER, 168,  96, 232, 168, 0,           0,  0 },
+    { ROOM_TAVERN,  AN_BOB,     304, 112, 408, 194, SP_OSTE,    45,  1 },
+
+    /* spiaggia: mare, palme al vento, gabbiano */
+    { ROOM_BEACH,   AN_WAVE,    336, 122, 512, 164, 1,          12,  3 },
+    { ROOM_BEACH,   AN_SWAY,      0,   0, 152, 112, 2,         100,  0 },
+    { ROOM_BEACH,   AN_FLYER,   152,  12, 512,  60, 2,           0,  0 },
+
+    /* rovine di notte: stelle, riflessi della luna, palma, il Custode */
+    { ROOM_NIGHT,   AN_TWINKLE,   0,   0, 344, 112, 0,           0,  0 },
+    { ROOM_NIGHT,   AN_WAVE,     80, 124, 312, 160, 1,           8,  4 },
+    { ROOM_NIGHT,   AN_SWAY,    424,   0, 512, 124, 2,         110,  0 },
+    { ROOM_NIGHT,   AN_SWAY,     16, 104,  80, 160, 1,          70,  0 },
+    { ROOM_NIGHT,   AN_BOB,     328,  88, 424, 178, SP_CUSTODE, 30,  1 },
+};
+const int anim_count = sizeof(anims) / sizeof(anims[0]);
 
 /* luoghi della mappa (coordinate dentro l'immagine della mappa) */
 const MapPlace map_places[] = {

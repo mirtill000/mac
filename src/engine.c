@@ -11,6 +11,7 @@
 #include "engine.h"
 #include "gfx.h"
 #include "platform.h"
+#include "anim.h"
 
 /* ------------------------------------------------------------------ */
 /* Stato                                                              */
@@ -78,9 +79,16 @@ static GRect hero_prev, box_prev;
 static int hero_prev_valid, box_prev_valid;
 static long hero_prev_key, box_prev_key;
 
-/* fotogrammi specchiati del protagonista (verso sinistra) */
-#define HERO_RB ((HERO_W + 7) / 8)
-static unsigned char hero_mirror[HERO_FRAMES][2][HERO_RB * HERO_H];
+/* sfondo originale (con gli oggetti di scena); bgbuf e' quello animato */
+static unsigned char basebuf[FB_H * FB_RB];
+
+/* animazioni: zone dello sfondo cambiate e non ancora portate a video */
+#define ANIM_RECTS 8
+static GRect anim_rects[ANIM_RECTS];
+static int anim_nrects;
+
+/* il protagonista sbatte le palpebre */
+static int blink_timer = 60, blinking;
 
 /* dati dei salvataggi (per la lista) */
 #define SAVE_SLOTS 8
@@ -89,6 +97,7 @@ static unsigned char slot_data[SAVE_SLOTS][SAVE_LEN];
 static int slot_used[SAVE_SLOTS];
 
 static void hero_draw(void);
+static int hero_size(void);
 static void render_full(void);
 
 /* ------------------------------------------------------------------ */
@@ -493,7 +502,11 @@ static void update_walk(void)
     if (!walking) return;
     dx = tx - G.hx;
     dy = ty - G.hy;
-    sx = dx > 5 ? 5 : (dx < -5 ? -5 : dx);
+    {
+        static const signed char speed[HERO_SIZES] = {4, 5, 5, 6};
+        int v = speed[hero_size()];
+        sx = dx > v ? v : (dx < -v ? -v : dx);
+    }
     sy = dy > 2 ? 2 : (dy < -2 ? -2 : dy);
     if (sx > 0) G.dir = 1;
     if (sx < 0) G.dir = -1;
@@ -948,10 +961,9 @@ static int title_at(int x, int y)
     return -1;
 }
 
-static void draw_title(void)
+static void draw_title_menu(void)
 {
     int i;
-    gfx_copy_from(bgbuf, 0, 0, FB_W, FB_H);
     for (i = 0; i < 4; i++) {
         int w = gfx_text_width(title_items[i]);
         gfx_fill((FB_W - w) / 2 - 8, TITLE_Y(i) - 2, w + 16, 18, PAT_BLACK);
@@ -963,7 +975,13 @@ static void draw_title(void)
             gfx_text((FB_W - w) / 2, TITLE_Y(i), title_items[i], FONT_REGULAR, COL_WHITE);
         }
     }
-    gfx_text(4, FB_H - 14, "v1.0", FONT_REGULAR, COL_WHITE);
+    gfx_text(4, FB_H - 14, "v1.1", FONT_REGULAR, COL_WHITE);
+}
+
+static void draw_title(void)
+{
+    gfx_copy_from(bgbuf, 0, 0, FB_W, FB_H);
+    draw_title_menu();
 }
 
 #define MAP_Y 30
@@ -1019,45 +1037,67 @@ static void draw_end(void)
 
 static void rebuild_background(void)
 {
+    int scene = -1;
     need_rebuild = 0;
     switch (mode) {
-    case MODE_TITLE: gfx_unpack(&asset_bg[BG_TITLE], bgbuf); break;
-    case MODE_MAP:   gfx_unpack(&asset_bg[BG_MAP], bgbuf); break;
-    case MODE_END:   gfx_unpack(&asset_bg[BG_NIGHT], bgbuf); break;
+    case MODE_TITLE: gfx_unpack(&asset_bg[BG_TITLE], basebuf); scene = SCENE_TITLE; break;
+    case MODE_MAP:   gfx_unpack(&asset_bg[BG_MAP], basebuf); break;
+    case MODE_END:   gfx_unpack(&asset_bg[BG_NIGHT], basebuf); scene = ROOM_NIGHT; break;
     default:
-        gfx_unpack(&asset_bg[room_background(G.room)], bgbuf);
+        gfx_unpack(&asset_bg[room_background(G.room)], basebuf);
         /* gli oggetti di scena vengono "stampati" nello sfondo */
-        memcpy(gfx_fb, bgbuf, SCENE_H * FB_RB);
+        memcpy(gfx_fb, basebuf, SCENE_H * FB_RB);
         gfx_clip(0, 0, FB_W, SCENE_H);
         script_draw_props(G.room);
         gfx_noclip();
-        memcpy(bgbuf, gfx_fb, SCENE_H * FB_RB);
+        memcpy(basebuf, gfx_fb, SCENE_H * FB_RB);
+        scene = G.room;
         break;
     }
+    memcpy(bgbuf, basebuf, sizeof(bgbuf));
+    anim_nrects = 0;
+    anim_reset(scene, basebuf, bgbuf);
+}
+
+/* misura del protagonista secondo la profondita' (prospettiva) */
+static int hero_size(void)
+{
+    const RoomDepth *d = &room_depth[G.room];
+    int h, i, best = 0;
+    if (d->y_near == d->y_far) h = d->h_near;
+    else h = d->h_far + (G.hy - d->y_far) * (d->h_near - d->h_far) / (d->y_near - d->y_far);
+    for (i = 1; i < HERO_SIZES; i++) {
+        int a = asset_hero_height[i] - h, b = asset_hero_height[best] - h;
+        if ((a < 0 ? -a : a) < (b < 0 ? -b : b)) best = i;
+    }
+    return best;
 }
 
 static int hero_frame(void)
 {
-    int base = flag(F_HAT_WORN) ? 8 : 0;
+    int base = flag(F_HAT_WORN) ? 9 : 0;
     Msg *m = cur_msg();
     if (walking) return base + 2 + (walk_anim % 6);
     if (m && m->text && m->speaker == SP_HERO && ((frame_count / 3) & 1)) return base + 1;
+    if (blinking) return base + 8;
     return base;
 }
 
 static GRect hero_rect(void)
 {
+    const Sprite *s = &asset_hero[hero_size()][0];
     GRect r;
-    r.x0 = (short)(G.hx - HERO_W / 2);
-    r.y0 = (short)(G.hy - HERO_H + 1);
-    r.x1 = (short)(r.x0 + HERO_W);
-    r.y1 = (short)(r.y0 + HERO_H);
+    r.x0 = (short)(G.hx - s->w / 2);
+    r.y0 = (short)(G.hy - s->h + 1);
+    r.x1 = (short)(r.x0 + s->w);
+    r.y1 = (short)(G.hy + 4);                 /* comprende l'ombra a terra */
     return r;
 }
 
 static long hero_key(void)
 {
-    return ((long)hero_frame() << 24) ^ ((long)(G.dir < 0) << 22) ^ ((long)G.hx << 9) ^ G.hy;
+    return ((long)hero_frame() << 24) ^ ((long)hero_size() << 20) ^ ((long)(G.dir < 0) << 19) ^
+           ((long)G.hx << 8) ^ G.hy;
 }
 
 static long box_key(void)
@@ -1076,12 +1116,14 @@ static void hero_draw(void)
 {
     int f = hero_frame();
     GRect r = hero_rect();
-    const Sprite *s = &asset_hero[f];
+    const Sprite *s = &asset_hero[hero_size()][f];
     gfx_clip(0, 0, FB_W, SCENE_H);
+    /* ombra sotto i piedi: lega il personaggio al pavimento */
+    gfx_shadow(G.hx + (G.dir < 0 ? 1 : -1), G.hy + 1, s->h / 6, 2);
     if (G.dir < 0)
-        gfx_masked(hero_mirror[f][0], hero_mirror[f][1], HERO_W, HERO_H, HERO_RB, r.x0, r.y0);
+        gfx_masked_mirror(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
     else
-        gfx_masked(s->bits, s->mask, HERO_W, HERO_H, HERO_RB, r.x0, r.y0);
+        gfx_masked(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
     gfx_noclip();
     hero_prev = r;
     hero_prev_valid = 1;
@@ -1104,7 +1146,18 @@ static void update_play_overlays(void)
     GRect hr = hero_rect();
     int hero_changed = !hero_prev_valid || hk != hero_prev_key;
     int box_changed = bk != box_prev_key;
-    int hero_redraw;
+    int hero_redraw, i;
+
+    /* le animazioni hanno ridisegnato parti di sfondo: se toccano il
+       protagonista o il box, vanno ridisegnati sopra */
+    for (i = 0; i < anim_nrects; i++) {
+        GRect a = anim_rects[i];
+        if (a.y1 > SCENE_H) a.y1 = SCENE_H;
+        gfx_copy_from(bgbuf, a.x0, a.y0, a.x1, a.y1);
+        if (hero_prev_valid && overlap(a, hero_prev)) hero_changed = 1;
+        if (box_prev_valid && overlap(a, box_prev)) box_changed = 1;
+    }
+    anim_nrects = 0;
 
     if (hero_changed && box_prev_valid && (overlap(hero_prev, box_prev) || overlap(hr, box_prev)))
         box_changed = 1;
@@ -1126,6 +1179,7 @@ static void render_full(void)
 {
     if (need_rebuild) rebuild_background();
     need_full = 0;
+    anim_nrects = 0;
     gfx_noclip();
     switch (mode) {
     case MODE_TITLE:
@@ -1161,7 +1215,19 @@ void game_render(void)
         update_play_overlays();
         if (panel_dirty) { draw_panel(); panel_dirty = 0; }
     }
-    if (gfx_take_dirty(&r)) plat_present(r.x0, r.y0, r.x1, r.y1);
+    if (!need_full && modal == MODAL_NONE && (mode == MODE_TITLE || mode == MODE_END) && anim_nrects) {
+        /* titolo e finale: si ricopiano solo le zone animate */
+        int i, menu = 0;
+        for (i = 0; i < anim_nrects; i++) {
+            GRect a = anim_rects[i];
+            if (mode == MODE_END && a.y1 > SCENE_H) a.y1 = SCENE_H;
+            gfx_copy_from(bgbuf, a.x0, a.y0, a.x1, a.y1);
+            if (a.y1 > TITLE_Y(0) - 3) menu = 1;
+        }
+        anim_nrects = 0;
+        if (mode == MODE_TITLE && menu) draw_title_menu();
+    }
+    while (gfx_take_dirty(&r)) plat_present(r.x0, r.y0, r.x1, r.y1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1402,6 +1468,42 @@ void game_tick(void)
         }
     }
     if (mode == MODE_PLAY && modal == MODAL_NONE) update_walk();
+
+    /* il protagonista sbatte le palpebre ogni tanto */
+    if (blinking) {
+        if (--blinking == 0) blink_timer = 50 + (int)(frame_count * 7 % 60);
+    } else if (--blink_timer <= 0) {
+        blinking = 3;
+    }
+
+    /* animazioni degli sfondi */
+    if (!need_rebuild && (mode == MODE_PLAY || mode == MODE_TITLE || mode == MODE_END)) {
+        GRect box, got[ANIM_RECTS];
+        const GRect *avoid = 0;
+        int speaker = -1, n, i;
+        Msg *m = cur_msg();
+        if (m && m->text) {
+            int nl;
+            const char *starts[MAX_LINES];
+            int lens[MAX_LINES];
+            box = msg_box_rect(m, &nl, starts, lens);
+            avoid = &box;
+            speaker = m->speaker;
+        }
+        n = anim_step(speaker, avoid, got, ANIM_RECTS);
+        {
+            for (i = 0; i < n; i++) {
+                if (anim_nrects < ANIM_RECTS) anim_rects[anim_nrects++] = got[i];
+                else {
+                    GRect *a = &anim_rects[ANIM_RECTS - 1];
+                    if (got[i].x0 < a->x0) a->x0 = got[i].x0;
+                    if (got[i].y0 < a->y0) a->y0 = got[i].y0;
+                    if (got[i].x1 > a->x1) a->x1 = got[i].x1;
+                    if (got[i].y1 > a->y1) a->y1 = got[i].y1;
+                }
+            }
+        }
+    }
 }
 
 int game_wants_quit(void) { return quit_requested; }
@@ -1425,26 +1527,8 @@ int game_debug(int what, int arg)
     return 0;
 }
 
-static unsigned char rev8(unsigned char b)
-{
-    b = (unsigned char)(((b & 0xF0) >> 4) | ((b & 0x0F) << 4));
-    b = (unsigned char)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
-    b = (unsigned char)(((b & 0xAA) >> 1) | ((b & 0x55) << 1));
-    return b;
-}
-
 void game_init(void)
 {
-    int f, p, y, i;
-    /* prepara i fotogrammi rivolti a sinistra */
-    for (f = 0; f < HERO_FRAMES; f++) {
-        for (p = 0; p < 2; p++) {
-            const unsigned char *src = p ? asset_hero[f].mask : asset_hero[f].bits;
-            for (y = 0; y < HERO_H; y++)
-                for (i = 0; i < HERO_RB; i++)
-                    hero_mirror[f][p][y * HERO_RB + i] = rev8(src[y * HERO_RB + (HERO_RB - 1 - i)]);
-        }
-    }
     memset(&G, 0, sizeof(G));
     mode = MODE_TITLE;
     need_rebuild = 1;

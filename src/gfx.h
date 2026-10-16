@@ -47,6 +47,12 @@ void gfx_bitmap(const Bitmap *b, int x, int y);
 void gfx_masked(const unsigned char *bits, const unsigned char *mask,
                 int w, int h, int rb, int x, int y);
 
+/* come gfx_masked ma specchiato orizzontalmente (w multiplo di 8) */
+void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
+                       int w, int h, int rb, int x, int y);
+/* ombra a terra: ellisse retinata al 50% (scurisce soltanto) */
+void gfx_shadow(int cx, int cy, int rx, int ry);
+
 /* testo UTF-8 (vengono riconosciute le lettere accentate italiane) */
 int  gfx_text(int x, int y, const char *s, int font, int col);
 void gfx_text_outline(int x, int y, const char *s, int font, int col);

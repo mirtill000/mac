@@ -18,45 +18,78 @@ const unsigned char PAT_LTGRAY[8] = {0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88, 0
 const unsigned char PAT_DKGRAY[8] = {0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD};
 
 static GRect clip = {0, 0, FB_W, FB_H};
-static GRect dirty;
-static int has_dirty;
-
 void gfx_clip(int x0, int y0, int x1, int y1)
 {
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > FB_W) x1 = FB_W;
     if (y1 > FB_H) y1 = FB_H;
-    clip.x0 = x0; clip.y0 = y0; clip.x1 = x1; clip.y1 = y1;
+    clip.x0 = (short)x0; clip.y0 = (short)y0; clip.x1 = (short)x1; clip.y1 = (short)y1;
 }
 
 void gfx_noclip(void) { gfx_clip(0, 0, FB_W, FB_H); }
 
+#define MAX_DIRTY 8
+static GRect dirty[MAX_DIRTY];
+static int ndirty;
+
+/* due zone si fondono se si toccano o sono vicine (meno CopyBits) */
+static int near_rect(const GRect *a, int x0, int y0, int x1, int y1)
+{
+    return x0 <= a->x1 + 8 && a->x0 <= x1 + 8 && y0 <= a->y1 + 2 && a->y0 <= y1 + 2;
+}
+
+static void merge_into(GRect *a, int x0, int y0, int x1, int y1)
+{
+    if (x0 < a->x0) a->x0 = (short)x0;
+    if (y0 < a->y0) a->y0 = (short)y0;
+    if (x1 > a->x1) a->x1 = (short)x1;
+    if (y1 > a->y1) a->y1 = (short)y1;
+}
+
 void gfx_dirty(int x0, int y0, int x1, int y1)
 {
+    int i;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > FB_W) x1 = FB_W;
     if (y1 > FB_H) y1 = FB_H;
     if (x0 >= x1 || y0 >= y1) return;
-    if (!has_dirty) {
-        dirty.x0 = x0; dirty.y0 = y0; dirty.x1 = x1; dirty.y1 = y1;
-        has_dirty = 1;
-        return;
+    for (i = 0; i < ndirty; i++) {
+        if (near_rect(&dirty[i], x0, y0, x1, y1)) {
+            int j;
+            merge_into(&dirty[i], x0, y0, x1, y1);
+            /* la zona allargata puo' ora toccarne altre */
+            for (j = 0; j < ndirty; j++) {
+                if (j != i && near_rect(&dirty[i], dirty[j].x0, dirty[j].y0, dirty[j].x1, dirty[j].y1)) {
+                    merge_into(&dirty[i], dirty[j].x0, dirty[j].y0, dirty[j].x1, dirty[j].y1);
+                    dirty[j] = dirty[--ndirty];
+                    if (i == ndirty) i = j;
+                    j = -1;
+                }
+            }
+            return;
+        }
     }
-    if (x0 < dirty.x0) dirty.x0 = x0;
-    if (y0 < dirty.y0) dirty.y0 = y0;
-    if (x1 > dirty.x1) dirty.x1 = x1;
-    if (y1 > dirty.y1) dirty.y1 = y1;
+    if (ndirty < MAX_DIRTY) {
+        dirty[ndirty].x0 = (short)x0; dirty[ndirty].y0 = (short)y0;
+        dirty[ndirty].x1 = (short)x1; dirty[ndirty].y1 = (short)y1;
+        ndirty++;
+    } else {
+        merge_into(&dirty[MAX_DIRTY - 1], x0, y0, x1, y1);
+    }
 }
 
-void gfx_dirty_all(void) { gfx_dirty(0, 0, FB_W, FB_H); }
+void gfx_dirty_all(void)
+{
+    ndirty = 0;
+    gfx_dirty(0, 0, FB_W, FB_H);
+}
 
 int gfx_take_dirty(GRect *r)
 {
-    if (!has_dirty) return 0;
-    *r = dirty;
-    has_dirty = 0;
+    if (!ndirty) return 0;
+    *r = dirty[--ndirty];
     return 1;
 }
 
@@ -213,6 +246,62 @@ void gfx_masked(const unsigned char *bits, const unsigned char *mask,
         }
     }
     /* il dirty e' gia' clippato dal chiamante del present */
+}
+
+static unsigned char rev_tab[256];
+static int rev_ready;
+
+static void init_rev(void)
+{
+    int i, b;
+    for (i = 0; i < 256; i++) {
+        unsigned char r = 0;
+        for (b = 0; b < 8; b++)
+            if (i & (1 << b)) r |= (unsigned char)(0x80 >> b);
+        rev_tab[i] = r;
+    }
+    rev_ready = 1;
+}
+
+void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
+                       int w, int h, int rb, int x, int y)
+{
+    int yy, i;
+    if (!rev_ready) init_rev();
+    if (x >= clip.x1 || x + w <= clip.x0 || y >= clip.y1 || y + h <= clip.y0) return;
+    gfx_dirty(x, y, x + w, y + h);
+    for (yy = 0; yy < h; yy++) {
+        int dy = y + yy;
+        unsigned char *row;
+        const unsigned char *bs = bits + yy * rb, *ms = mask + yy * rb;
+        if (dy < clip.y0 || dy >= clip.y1) continue;
+        row = gfx_fb + dy * FB_RB;
+        for (i = 0; i < rb; i++) {
+            int src = rb - 1 - i;
+            int px = x + (i << 3);
+            unsigned char m = rev_tab[ms[src]];
+            if (!m || px + 8 <= clip.x0 || px >= clip.x1) continue;
+            put8(row, px, rev_tab[bs[src]], m);
+        }
+    }
+}
+
+void gfx_shadow(int cx, int cy, int rx, int ry)
+{
+    int dy;
+    for (dy = -ry; dy <= ry; dy++) {
+        int y = cy + dy, half, x;
+        long t = (long)rx * rx * (ry * ry - dy * dy);
+        if (y < clip.y0 || y >= clip.y1) continue;
+        /* semi-larghezza = rx * sqrt(1 - dy^2/ry^2) */
+        half = 0;
+        while ((long)(half + 1) * (half + 1) * ry * ry <= t) half++;
+        for (x = cx - half; x <= cx + half; x++) {
+            if (x < clip.x0 || x >= clip.x1 || ((x + y) & 1)) continue;
+            gfx_fb[y * FB_RB + (x >> 3)] |= (unsigned char)(0x80 >> (x & 7));
+        }
+        gfx_dirty(cx - half, y, cx + half + 1, y + 1);
+    }
 }
 
 void gfx_bitmap(const Bitmap *b, int x, int y)
