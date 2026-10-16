@@ -14,6 +14,10 @@ project(PuertoPolli C)
 
 set(GAME_SOURCES
     src/engine.c
+    src/msg.c
+    src/walk.c
+    src/save.c
+    src/ui.c
     src/anim.c
     src/script.c
     src/gfx.c

@@ -18,13 +18,24 @@ const unsigned char PAT_LTGRAY[8] = {0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88, 0
 const unsigned char PAT_DKGRAY[8] = {0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD};
 
 static GRect clip = {0, 0, FB_W, FB_H};
+/* limiti di clipping in byte, precalcolati per put8 (chiamata per ogni
+   byte di sprite e testo: deve fare il minimo indispensabile) */
+static int clip_b0 = 0, clip_b1 = FB_RB - 1;
+static unsigned char clip_lm = 0xFF, clip_rm = 0xFF;
+
 void gfx_clip(int x0, int y0, int x1, int y1)
 {
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > FB_W) x1 = FB_W;
     if (y1 > FB_H) y1 = FB_H;
+    if (x1 < x0) x1 = x0;
     clip.x0 = (short)x0; clip.y0 = (short)y0; clip.x1 = (short)x1; clip.y1 = (short)y1;
+    clip_b0 = x0 >> 3;
+    clip_b1 = (x1 - 1) >> 3;
+    clip_lm = (unsigned char)(0xFF >> (x0 & 7));
+    clip_rm = (x1 & 7) ? (unsigned char)(0xFF << (8 - (x1 & 7))) : 0xFF;
+    if (x1 == x0) clip_b1 = clip_b0 - 1;        /* area vuota */
 }
 
 void gfx_noclip(void) { gfx_clip(0, 0, FB_W, FB_H); }
@@ -200,36 +211,29 @@ static unsigned char cur_tint;
 
 void gfx_set_tint(const unsigned char *pat) { tint_pat = pat; }
 
+/* un byte di destinazione con maschera, nel rettangolo di clipping */
+#define PUT_BYTE(row, b, s, m) do {                                         \
+        if ((b) >= clip_b0 && (b) <= clip_b1) {                             \
+            unsigned char mm_ = (m);                                        \
+            if ((b) == clip_b0) mm_ &= clip_lm;                             \
+            if ((b) == clip_b1) mm_ &= clip_rm;                             \
+            (row)[b] = (unsigned char)(((row)[b] & ~mm_) | (((s) | cur_tint) & mm_)); \
+        }                                                                   \
+    } while (0)
+
 /* scrive 8 pixel (src, con maschera m) alla posizione x della riga */
 static void put8(unsigned char *row, int x, unsigned char src, unsigned char m)
 {
-    int b = x >> 3, sh = x & 7;
-    unsigned char m0, m1, s0, s1;
+    int b, sh;
     if (!m) return;
-    m0 = (unsigned char)(m >> sh);
-    s0 = (unsigned char)(src >> sh);
-    m1 = (unsigned char)(m << (8 - sh));
-    s1 = (unsigned char)(src << (8 - sh));
-    /* clipping orizzontale */
-    if (b >= 0 && b < FB_RB) {
-        unsigned char c = 0xFF;
-        if (b == (clip.x0 >> 3)) c &= lmask(clip.x0);
-        if (b < (clip.x0 >> 3)) c = 0;
-        if (b == ((clip.x1 - 1) >> 3) && (clip.x1 & 7)) c &= rmask(clip.x1);
-        if (b > ((clip.x1 - 1) >> 3)) c = 0;
-        m0 &= c;
-        row[b] = (unsigned char)((row[b] & ~m0) | ((s0 | cur_tint) & m0));
+    b = x >> 3;
+    sh = x & 7;
+    if (!sh) {
+        PUT_BYTE(row, b, src, m);
+        return;
     }
-    if (sh && b + 1 >= 0 && b + 1 < FB_RB) {
-        unsigned char c = 0xFF;
-        b++;
-        if (b == (clip.x0 >> 3)) c &= lmask(clip.x0);
-        if (b < (clip.x0 >> 3)) c = 0;
-        if (b == ((clip.x1 - 1) >> 3) && (clip.x1 & 7)) c &= rmask(clip.x1);
-        if (b > ((clip.x1 - 1) >> 3)) c = 0;
-        m1 &= c;
-        row[b] = (unsigned char)((row[b] & ~m1) | ((s1 | cur_tint) & m1));
-    }
+    PUT_BYTE(row, b, (unsigned char)(src >> sh), (unsigned char)(m >> sh));
+    PUT_BYTE(row, b + 1, (unsigned char)(src << (8 - sh)), (unsigned char)(m << (8 - sh)));
 }
 
 void gfx_masked(const unsigned char *bits, const unsigned char *mask,
@@ -353,18 +357,23 @@ int gfx_text_len(const char *s)
     return n;
 }
 
-void gfx_glyph(int x, int y, int code, int font, int col)
+/* disegna un carattere senza segnalare la zona sporca */
+static void glyph_raw(int x, int y, int code, int font, int col)
 {
     const unsigned char *g;
-    int r;
+    int r, r0 = 0, r1 = FONT_H;
     if (code < FONT_FIRST || code > 255) code = '?';
     if (x >= clip.x1 || x + FONT_W <= clip.x0) return;
+    if (y < clip.y0) r0 = clip.y0 - y;
+    if (y + FONT_H > clip.y1) r1 = clip.y1 - y;
     g = asset_font[font] + (code - FONT_FIRST) * FONT_H;
-    for (r = 0; r < FONT_H; r++) {
-        int dy = y + r;
-        if (!g[r] || dy < clip.y0 || dy >= clip.y1) continue;
-        put8(gfx_fb + dy * FB_RB, x, col ? 0xFF : 0x00, g[r]);
-    }
+    for (r = r0; r < r1; r++)
+        if (g[r]) put8(gfx_fb + (y + r) * FB_RB, x, col ? 0xFF : 0x00, g[r]);
+}
+
+void gfx_glyph(int x, int y, int code, int font, int col)
+{
+    glyph_raw(x, y, code, font, col);
     gfx_dirty(x, y, x + FONT_W + 1, y + FONT_H);
 }
 
@@ -372,11 +381,52 @@ int gfx_text(int x, int y, const char *s, int font, int col)
 {
     int x0 = x;
     while (*s) {
-        int c = gfx_next_char(&s);
-        gfx_glyph(x, y, c, font, col);
+        glyph_raw(x, y, gfx_next_char(&s), font, col);
         x += FONT_W;
     }
+    gfx_dirty(x0, y, x + 1, y + FONT_H);
     return x - x0;
+}
+
+int gfx_text_l1(int x, int y, const unsigned char *s, int n, int font, int col)
+{
+    int x0 = x;
+    while (n-- > 0) {
+        glyph_raw(x, y, *s++, font, col);
+        x += FONT_W;
+    }
+    gfx_dirty(x0, y, x + 1, y + FONT_H);
+    return x - x0;
+}
+
+int gfx_to_latin1(const char *s, int bytes, unsigned char *out, int max)
+{
+    const char *end = s + bytes;
+    int n = 0;
+    while (s < end && *s && n < max)
+        out[n++] = (unsigned char)gfx_next_char(&s);
+    return n;
+}
+
+void gfx_line(int x0, int y0, int x1, int y1, int col)
+{
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1, sx = x0 < x1 ? 1 : -1;
+    int dy = y1 > y0 ? y0 - y1 : y1 - y0, sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        if (x0 >= clip.x0 && x0 < clip.x1 && y0 >= clip.y0 && y0 < clip.y1) {
+            unsigned char *p = gfx_fb + y0 * FB_RB + (x0 >> 3);
+            if (col) *p |= (unsigned char)(0x80 >> (x0 & 7));
+            else *p &= (unsigned char)~(0x80 >> (x0 & 7));
+        }
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+    gfx_dirty(0, 0, FB_W, FB_H);
 }
 
 void gfx_text_outline(int x, int y, const char *s, int font, int col)

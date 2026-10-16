@@ -65,5 +65,11 @@ void gfx_glyph(int x, int y, int code, int font, int col);
 
 /* decodifica UTF-8 -> Latin-1 (con i glifi speciali) */
 int  gfx_next_char(const char **s);
+/* converte al massimo `bytes` byte UTF-8 in Latin-1; ritorna i caratteri */
+int  gfx_to_latin1(const char *s, int bytes, unsigned char *out, int max);
+/* testo gia' convertito in Latin-1 (n caratteri) */
+int  gfx_text_l1(int x, int y, const unsigned char *s, int n, int font, int col);
+/* linea di 1 pixel (Bresenham) */
+void gfx_line(int x0, int y0, int x1, int y1, int col);
 
 #endif
