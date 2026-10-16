@@ -52,14 +52,14 @@ const Hotspot hotspots[] = {
     { H_PAESE,      ROOM_DOCK,   "Puerto Polli",     150,  10, 180,  80,  -1,   0,  0, -1 },
     { H_SENTIERO_D, ROOM_DOCK,   "sentiero",           0, 190,  18,  50,  10, 226, -1, ROOM_MAP },
 
-    { H_OSTE,       ROOM_TAVERN, "oste",             307, 113,  99,  98, 204, 234,  1, -1 },
-    { H_BANDIERA,   ROOM_TAVERN, "bandiera",          10,  51,  60,  77,  70, 234, -1, -1 },
-    { H_QUADRO,     ROOM_TAVERN, "quadretto",         19, 140,  32,  32,  70, 234, -1, -1 },
-    { H_LANTERNA,   ROOM_TAVERN, "lanterna",         182, 106,  34,  50, 190, 234,  1, -1 },
-    { H_FINESTRA,   ROOM_TAVERN, "finestra",         258, 103,  42,  45, 214, 234,  1, -1 },
-    { H_BOTTIGLIE,  ROOM_TAVERN, "bottiglie",        461,  41,  51, 140, 220, 234,  1, -1 },
-    { H_BOCCALE,    ROOM_TAVERN, "boccale",          242, 174,  34,  32, 214, 234,  1, -1 },
-    { H_USCITA_T,   ROOM_TAVERN, "uscita",             0, 150,  22,  90,  12, 234, -1, ROOM_DOCK },
+    { H_OSTE,       ROOM_TAVERN, "oste",             307, 113,  99,  98, 170, 281,  1, -1 },
+    { H_BANDIERA,   ROOM_TAVERN, "bandiera",          10,  51,  60,  77,  70, 281, -1, -1 },
+    { H_QUADRO,     ROOM_TAVERN, "quadretto",         19, 140,  32,  32,  70, 281, -1, -1 },
+    { H_LANTERNA,   ROOM_TAVERN, "lanterna",         182, 106,  34,  50, 190, 281,  1, -1 },
+    { H_FINESTRA,   ROOM_TAVERN, "finestra",         258, 103,  42,  45, 214, 281,  1, -1 },
+    { H_BOTTIGLIE,  ROOM_TAVERN, "bottiglie",        461,  41,  51, 140, 220, 281,  1, -1 },
+    { H_BOCCALE,    ROOM_TAVERN, "boccale",          242, 174,  34,  32, 214, 281,  1, -1 },
+    { H_USCITA_T,   ROOM_TAVERN, "uscita",             0, 150,  22,  90,  44, 281, -1, ROOM_DOCK },
 
     { H_CAPPELLO,   ROOM_BEACH,  "cappello",         372, 180,  30,  26, 352, 232,  1, -1 },
     { H_CASSA,      ROOM_BEACH,  "cassa",            120, 182,  42,  32, 176, 218, -1, -1 },
@@ -82,8 +82,8 @@ const int hotspot_count = sizeof(hotspots) / sizeof(hotspots[0]);
 const WalkArea walk_areas[ROOM_COUNT] = {
     /* molo: le assi; a sinistra il bordo scende in diagonale verso il mare */
     { 1, { { 5, {   8, 232, 505, 505,   8 }, { 218, 201, 200, 236, 236 } } } },
-    /* taberna: davanti al bancone */
-    { 1, { { 4, {  10, 228, 228,  10 },      { 230, 230, 238, 238 } } } },
+    /* taberna: davanti al bancone, con i piedi fuori dall'inquadratura */
+    { 1, { { 4, {  40, 230, 230,  40 },      { 279, 279, 283, 283 } } } },
     /* spiaggia: la sabbia, fino al relitto */
     { 1, { { 4, {  40, 455, 455,  40 },      { 198, 198, 236, 236 } } } },
     /* rovine: pontile a "L" (striscia in basso + piattaforma della bitta) */
@@ -93,10 +93,15 @@ const WalkArea walk_areas[ROOM_COUNT] = {
 
 /* prospettiva: { y lontano, altezza lontano, y vicino, altezza vicino } */
 const RoomDepth room_depth[ROOM_COUNT] = {
-    { 200,  96, 236, 112 },    /* molo     */
-    { 230, 124, 238, 124 },    /* taberna  */
-    { 200,  88, 236, 100 },    /* spiaggia */
-    { 206, 100, 236, 112 },    /* notte    */
+    /* molo: Barbapollo (basso e tarchiato) e' alto 93 px con i piedi a y 233 */
+    { 200,  96, 236, 108, 0 },
+    /* taberna: inquadratura a mezzo busto come nel mockup, in scala con
+       l'oste: il protagonista e' alto 172 px e ha i piedi sotto lo schermo */
+    { 279, 172, 283, 172, 0 },
+    /* spiaggia: in lontananza, scala del relitto e della cassa */
+    { 200,  90, 236, 100, 0 },
+    /* notte: scala del pontile e del Custode; luce lunare */
+    { 206,  96, 236, 108, 1 },
 };
 
 /* Animazioni degli sfondi (vedi anim.h). x0 e x1 multipli di 8.

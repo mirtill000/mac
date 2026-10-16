@@ -183,7 +183,7 @@ void go_room(int room)
         if (from == ROOM_TAVERN && mode == MODE_PLAY) { G.hx = 428; G.hy = 204; G.dir = -1; }
         else { G.hx = 34; G.hy = 226; G.dir = 1; }
         break;
-    case ROOM_TAVERN: G.hx = 34;  G.hy = 234; G.dir = 1; break;
+    case ROOM_TAVERN: G.hx = 60;  G.hy = 281; G.dir = 1; break;
     case ROOM_BEACH:  G.hx = 60;  G.hy = 226; G.dir = 1; break;
     default:          G.hx = 48;  G.hy = 230; G.dir = 1; break;
     }
@@ -1204,6 +1204,8 @@ static void hero_draw(void)
     GRect r = hero_rect();
     const Sprite *s = &asset_hero[sz][f];
     gfx_clip(0, 0, FB_W, SCENE_H);
+    /* luce della stanza: negli ambienti bui il bianco si vela */
+    if (room_depth[G.room].tint) gfx_set_tint(PAT_LTGRAY);
     /* ombra sotto i piedi: lega il personaggio al pavimento */
     gfx_shadow(G.hx + (G.dir < 0 ? 1 : -1), G.hy + 1, s->h / 6, 2);
     if (G.dir < 0)
@@ -1218,6 +1220,7 @@ static void hero_draw(void)
         else
             gfx_masked(h->bits, h->mask, h->w, h->h, h->rowBytes, r.x0, r.y0);
     }
+    gfx_set_tint(0);
     gfx_noclip();
     hero_prev = r;
     hero_prev_valid = 1;

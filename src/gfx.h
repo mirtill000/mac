@@ -50,6 +50,9 @@ void gfx_masked(const unsigned char *bits, const unsigned char *mask,
 /* come gfx_masked ma specchiato orizzontalmente (w multiplo di 8) */
 void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
                        int w, int h, int rb, int x, int y);
+/* velatura per le bitmap con maschera (luce della stanza): retino 8x8
+   allineato allo schermo, aggiunto ai pixel disegnati; NULL = nessuna */
+void gfx_set_tint(const unsigned char *pat);
 /* ombra a terra: ellisse retinata al 50% (scurisce soltanto) */
 void gfx_shadow(int cx, int cy, int rx, int ry);
 

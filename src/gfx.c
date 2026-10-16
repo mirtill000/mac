@@ -194,6 +194,12 @@ void gfx_plot(int x, int y, int col)
 
 /* ------------------------------------------------------------------ */
 
+/* velatura corrente (solo durante il disegno delle bitmap con maschera) */
+static const unsigned char *tint_pat;
+static unsigned char cur_tint;
+
+void gfx_set_tint(const unsigned char *pat) { tint_pat = pat; }
+
 /* scrive 8 pixel (src, con maschera m) alla posizione x della riga */
 static void put8(unsigned char *row, int x, unsigned char src, unsigned char m)
 {
@@ -212,7 +218,7 @@ static void put8(unsigned char *row, int x, unsigned char src, unsigned char m)
         if (b == ((clip.x1 - 1) >> 3) && (clip.x1 & 7)) c &= rmask(clip.x1);
         if (b > ((clip.x1 - 1) >> 3)) c = 0;
         m0 &= c;
-        row[b] = (unsigned char)((row[b] & ~m0) | (s0 & m0));
+        row[b] = (unsigned char)((row[b] & ~m0) | ((s0 | cur_tint) & m0));
     }
     if (sh && b + 1 >= 0 && b + 1 < FB_RB) {
         unsigned char c = 0xFF;
@@ -222,7 +228,7 @@ static void put8(unsigned char *row, int x, unsigned char src, unsigned char m)
         if (b == ((clip.x1 - 1) >> 3) && (clip.x1 & 7)) c &= rmask(clip.x1);
         if (b > ((clip.x1 - 1) >> 3)) c = 0;
         m1 &= c;
-        row[b] = (unsigned char)((row[b] & ~m1) | (s1 & m1));
+        row[b] = (unsigned char)((row[b] & ~m1) | ((s1 | cur_tint) & m1));
     }
 }
 
@@ -237,6 +243,7 @@ void gfx_masked(const unsigned char *bits, const unsigned char *mask,
         unsigned char *row;
         if (dy < clip.y0 || dy >= clip.y1) continue;
         row = gfx_fb + dy * FB_RB;
+        cur_tint = tint_pat ? tint_pat[dy & 7] : 0;
         for (i = 0; i < rb; i++) {
             unsigned char m = mask ? mask[yy * rb + i] : 0xFF;
             int px = x + (i << 3);
@@ -245,6 +252,7 @@ void gfx_masked(const unsigned char *bits, const unsigned char *mask,
             put8(row, px, bits[yy * rb + i], m);
         }
     }
+    cur_tint = 0;
     /* il dirty e' gia' clippato dal chiamante del present */
 }
 
@@ -276,6 +284,7 @@ void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
         const unsigned char *bs = bits + yy * rb, *ms = mask + yy * rb;
         if (dy < clip.y0 || dy >= clip.y1) continue;
         row = gfx_fb + dy * FB_RB;
+        cur_tint = tint_pat ? tint_pat[dy & 7] : 0;
         for (i = 0; i < rb; i++) {
             int src = rb - 1 - i;
             int px = x + (i << 3);
@@ -284,6 +293,7 @@ void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
             put8(row, px, rev_tab[bs[src]], m);
         }
     }
+    cur_tint = 0;
 }
 
 void gfx_shadow(int cx, int cy, int rx, int ry)

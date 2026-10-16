@@ -68,8 +68,10 @@ typedef struct {
 typedef struct { signed char n; short x[WALK_MAX_PTS], y[WALK_MAX_PTS]; } WalkPoly;
 typedef struct { signed char npoly; WalkPoly poly[2]; } WalkArea;
 
-/* prospettiva: altezza del protagonista in funzione della y dei piedi */
-typedef struct { short y_far, h_far, y_near, h_near; } RoomDepth;
+/* prospettiva: altezza del protagonista in funzione della y dei piedi,
+   calibrata sugli oggetti e sui personaggi della stanza; tint = velatura
+   (0 nessuna, 1 retino leggero per gli ambienti bui) */
+typedef struct { short y_far, h_far, y_near, h_near; short tint; } RoomDepth;
 
 /* ---- chi parla --------------------------------------------------- */
 enum { SP_HERO, SP_OSTE, SP_BARBA, SP_MOZZO, SP_CUSTODE, SP_GABBIANO,

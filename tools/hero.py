@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOCKUP = os.path.join(ROOT, "reference", "mockup.png")
 
-HEIGHTS = (92, 108, 124)        # altezze nominali (prospettiva)
+HEIGHTS = (92, 108, 172)        # altezze nominali: prospettiva all'aperto, mezzo busto in Taberna
 UPPER_RATIO = 0.56              # testa+busto (fino alla cintura) / altezza
 
 # toni finali
