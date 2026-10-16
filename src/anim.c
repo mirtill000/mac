@@ -129,7 +129,7 @@ void anim_reset(int sc, const unsigned char *b, unsigned char *c)
         act[nact] = &anims[i];
         memset(&st[nact], 0, sizeof(AnimState));
         st[nact].timer = (short)(rand_n(40) + 20);
-        st[nact].phase = (short)rand_n(64);
+        st[nact].phase = (short)(anims[i].type == AN_TALK ? 0 : rand_n(64));
         nact++;
     }
     for (i = 0; i < MAX_DIM; i++) dim_timer[i] = 0;
@@ -189,6 +189,44 @@ static int step_bob(const Anim *a, AnimState *s, int speaker, GRect *r, int *any
         memcpy(cur + y * FB_RB + (a->x0 >> 3), base + sy * FB_RB + (a->x0 >> 3),
                (a->x1 - a->x0) >> 3);
     }
+    grow(r, any, a->x0, a->y0, a->x1, a->y1);
+    return 1;
+}
+
+static int get_px(const unsigned char *buf, int x, int y)
+{
+    return (buf[y * FB_RB + (x >> 3)] >> (7 - (x & 7))) & 1;
+}
+
+/* la mandibola scende di k pixel; lo spazio che si apre e' la bocca */
+static void draw_jaw(const Anim *a, int k)
+{
+    int x, y;
+    for (y = a->y1 - 1; y >= a->y0; y--) {
+        for (x = a->x0; x < a->x1; x++) {
+            int v;
+            if (y - k >= a->y0) v = get_px(base, x, y - k);          /* mandibola spostata */
+            else if (x >= a->p2 && x <= a->p3) v = !(a->p1 & TALK_LIGHT); /* bocca aperta */
+            else v = get_px(base, x, y);
+            set_px(x, y, v);
+        }
+    }
+}
+
+static int step_talk(const Anim *a, AnimState *s, int speaker, GRect *r, int *any)
+{
+    static const unsigned char pattern[8] = {1, 2, 1, 0, 2, 1, 0, 1};
+    int want;
+    if ((a->p1 & ~TALK_LIGHT) == speaker) {
+        if (--s->timer > 0) return 0;
+        s->timer = (short)(2 + rand_n(2));
+        want = pattern[rand_n(8)];
+    } else {
+        want = 0;                                    /* bocca chiusa quando tace */
+    }
+    if (want == s->phase) return 0;
+    s->phase = (short)want;
+    draw_jaw(a, want);
     grow(r, any, a->x0, a->y0, a->x1, a->y1);
     return 1;
 }
@@ -307,6 +345,7 @@ int anim_step(int speaker, const GRect *avoid, GRect *out, int max)
         case AN_FLICKER: step_flicker(a, &st[i], &r, &any); break;
         case AN_TWINKLE: step_twinkle(a, &r, &any); break;
         case AN_FLYER:   step_flyer(a, &st[i], &r, &any); break;
+        case AN_TALK:    step_talk(a, &st[i], speaker, &r, &any); break;
         }
         if (!any) continue;
         if (n < max) {

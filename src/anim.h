@@ -17,9 +17,15 @@ enum {
     AN_BOB,       /* personaggio che annuisce quando parla   p1 chi parla, p2 periodo di respiro (0 = mai), p3 pixel */
     AN_FLICKER,   /* lanterna che tremola */
     AN_TWINKLE,   /* stelle che brillano */
-    AN_FLYER      /* gabbiano che attraversa il cielo        p1 velocita' */
+    AN_FLYER,     /* gabbiano che attraversa il cielo        p1 velocita' */
+    AN_TALK       /* bocca che si muove mentre parla: la mandibola (x0..x1, y0..y1)
+                     scende di 1-2 pixel e la bocca (x p2..p3 sulla riga y0) si apre;
+                     p1 chi parla (+ TALK_LIGHT: si vedono i denti chiari invece
+                     della bocca scura, per facce e barbe scure).
+                     Qui x0 e x1 non devono essere multipli di 8 */
 };
 
+#define TALK_LIGHT 16
 #define SCENE_TITLE 10       /* scena del titolo (le stanze vanno da 0 a 3) */
 
 typedef struct {

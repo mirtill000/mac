@@ -6,7 +6,8 @@ Grafica 1-bit, risoluzione 512 × 342, interfaccia a nove verbi, inventario,
 dialoghi a scelta multipla, mappa dell'isola, salvataggi e tanto umorismo.
 Le scene sono animate con discrezione (al massimo due effetti per scena):
 il mare ondeggia, un gabbiano attraversa il cielo, le stelle brillano, la
-lanterna della Taberna tremola e i personaggi annuiscono quando parlano.
+lanterna della Taberna tremola e, quando un personaggio parla, si muove
+solo la sua bocca (al Custode si apre il becco).
 Il protagonista cambia dimensione con la profondità, proietta un'ombra a
 terra e ogni tanto sbatte le palpebre. Cammina solo dove c'è davvero il
 pavimento: le zone calpestabili sono poligoni che seguono il bordo del molo,
