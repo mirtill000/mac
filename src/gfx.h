@@ -47,9 +47,10 @@ void gfx_bitmap(const Bitmap *b, int x, int y);
 void gfx_masked(const unsigned char *bits, const unsigned char *mask,
                 int w, int h, int rb, int x, int y);
 
-/* come gfx_masked ma specchiato orizzontalmente (w multiplo di 8) */
-void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
-                       int w, int h, int rb, int x, int y);
+/* sprite a righe condivise: la riga y sta in pool + rows[y] (rb byte di
+   disegno seguiti da rb byte di maschera); mirror = specchiato */
+void gfx_sprite_rows(const unsigned char *pool, const unsigned short *rows,
+                     int w, int h, int rb, int x, int y, int mirror);
 /* velatura per le bitmap con maschera (luce della stanza): retino 8x8
    allineato allo schermo, aggiunto ai pixel disegnati; NULL = nessuna */
 void gfx_set_tint(const unsigned char *pat);

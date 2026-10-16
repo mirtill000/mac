@@ -139,17 +139,17 @@ static void travel(int place)
 static void test_clipping(void)
 {
     static unsigned char before[sizeof(gfx_fb)];
-    const Sprite *sp = &asset_hero[HERO_SIZES - 1][0];
+    const HeroSprite *sp = &asset_hero[HERO_SIZES - 1];
     int x, y, bad = 0;
     const int cx0 = 101, cy0 = 50, cx1 = 299, cy1 = 151;    /* bordi non allineati al byte */
     printf("Clipping\n");
     memset(gfx_fb, 0x5A, sizeof(gfx_fb));
     memcpy(before, gfx_fb, sizeof(gfx_fb));
     gfx_clip(cx0, cy0, cx1, cy1);
-    gfx_masked(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, cx0 - 40, cy0 - 90);
-    gfx_masked_mirror(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, cx1 - 20, cy1 - 30);
-    gfx_masked(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, -50, -60);           /* fuori schermo */
-    gfx_masked_mirror(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, FB_W - 10, FB_H - 10);
+    gfx_sprite_rows(sp->pool, sp->rows, sp->w, sp->h, sp->rowBytes, cx0 - 40, cy0 - 90, 0);
+    gfx_sprite_rows(sp->pool, sp->rows, sp->w, sp->h, sp->rowBytes, cx1 - 20, cy1 - 30, 1);
+    gfx_sprite_rows(sp->pool, sp->rows, sp->w, sp->h, sp->rowBytes, -50, -60, 0);   /* fuori schermo */
+    gfx_sprite_rows(sp->pool, sp->rows, sp->w, sp->h, sp->rowBytes, FB_W - 10, FB_H - 10, 1);
     gfx_text(cx1 - 30, cy0 - 5, "Bordo àèìòù", FONT_BOLD, COL_BLACK);
     gfx_text(-20, cy1 - 7, "Fuori", FONT_REGULAR, COL_WHITE);
     gfx_fill(cx0 - 20, cy0 - 20, 400, 400, PAT_GRAY);
@@ -163,6 +163,31 @@ static void test_clipping(void)
             if (!inside && ((gfx_fb[y * FB_RB + (x >> 3)] ^ before[y * FB_RB + (x >> 3)]) & bit)) bad++;
         }
     CHECK(bad == 0, "nessun pixel modificato fuori dall'area di clipping");
+    /* il percorso veloce (riga intera) deve dare gli stessi pixel di quello
+       lento (byte per byte, usato quando il ritaglio non e' allineato) */
+    {
+        static unsigned char fast[sizeof(gfx_fb)];
+        int sh, mir, diff = 0;
+        for (mir = 0; mir < 2; mir++)
+            for (sh = 0; sh < 8; sh++) {
+                int sz;
+                for (sz = 0; sz < HERO_SIZES; sz++) {
+                    const HeroSprite *h = &asset_hero[sz];
+                    memset(gfx_fb, 0x5A, sizeof(gfx_fb));
+                    gfx_set_tint(sh & 1 ? PAT_LTGRAY : 0);
+                    gfx_clip(0, 0, FB_W, FB_H);
+                    gfx_sprite_rows(h->pool, h->rows, h->w, h->h, h->rowBytes, 100 + sh, 40, mir);
+                    memcpy(fast, gfx_fb, sizeof(gfx_fb));
+                    memset(gfx_fb, 0x5A, sizeof(gfx_fb));
+                    gfx_clip(1, 0, FB_W - 1, FB_H);        /* non allineato: percorso lento */
+                    gfx_sprite_rows(h->pool, h->rows, h->w, h->h, h->rowBytes, 100 + sh, 40, mir);
+                    gfx_set_tint(0);
+                    if (memcmp(fast, gfx_fb, sizeof(gfx_fb))) diff++;
+                }
+            }
+        gfx_noclip();
+        CHECK(diff == 0, "disegno veloce e lento del protagonista identici (anche specchiato)");
+    }
     game_debug(DBG_REDRAW, 0);
     frames(2);
 }
@@ -251,6 +276,38 @@ static void test_walk_points(void)
     CHECK(bad == 0, "tutti gli ingressi delle stanze sono calpestabili");
     clear_interaction();
     go_room(saved_room);
+    clear_interaction();
+    frames(2);
+}
+
+/* ---- bug corretti: non devono tornare ---- */
+static void test_regressions(void)
+{
+    unsigned char d[SAVE_LEN];
+    GameState keep = G;
+    printf("Regressioni\n");
+    go_room(ROOM_DOCK);
+    clear_interaction();
+    CHECK(hotspot_at(450, 170) == H_BARBA && hotspot_at(416, 149) == H_TABERNA,
+          "il viso di Barbapollo non apre la Taberna");
+    /* dal verbo al pulsante Menu in un colpo solo: il ridisegno parziale
+       deve evidenziare il pulsante (lo controlla check_render) */
+    game_mouse(TVERB_X(V_GUARDA), TVERB_Y(V_GUARDA));
+    frames(1);
+    game_mouse(MENU_BTN_X + 10, SENTENCE_Y + 6);
+    frames(1);
+    game_mouse(200, 100);
+    frames(1);
+    /* salvataggio della vecchia versione dopo la vittoria della Parte I */
+    memset(&G, 0, sizeof(G));
+    G.room = ROOM_NIGHT; G.hx = 100; G.hy = 230; G.dir = 1;
+    set_flag(F_GAME_WON);
+    serialize(d);
+    deserialize(d, SAVE_LEN);
+    CHECK(flag(F_PART2), "un vecchio salvataggio vinto apre la Parte II");
+    G = keep;
+    clear_interaction();
+    go_room(G.room);
     clear_interaction();
     frames(2);
 }
@@ -622,6 +679,7 @@ int main(int argc, char **argv)
     test_saves();
     test_long_text();
     test_walk_points();
+    test_regressions();
     test_perspective();
 
     printf("\n%s (%d errori)\n", failures ? "TEST FALLITO" : "TUTTO OK", failures);

@@ -200,13 +200,11 @@ def scene_map(g):
 # Animazioni
 # ---------------------------------------------------------------------------
 
-# luci animate: scena, rettangolo (x allineate al byte), centro, livelli,
-# raggio, tipo ("glow": tremolio; "band": fascia che gira, livelli =
-# (fotogrammi, raggio verticale))
+# luci che tremolano: scena, rettangolo (x allineate al byte), centro,
+# livelli, raggio. (La lente del faro e' calcolata nel gioco: AN_BEAM.)
 FLICKERS = [
-    ("tavern", (168, 96, 232, 168), (198, 128), (0, 26, -18, 12), 38, "glow"),
-    ("faro_in", (264, 0, 376, 112), (320, 54), (10, 56), 52, "band"),
-    ("nave_in", (224, 96, 288, 168), (258, 118), (0, 30, -22, 14), 34, "glow"),
+    ("tavern", (168, 96, 232, 168), (198, 128), (0, 26, -18, 12), 38),
+    ("nave_in", (224, 96, 288, 168), (258, 118), (0, 30, -22, 14), 34),
 ]
 
 
@@ -374,30 +372,18 @@ def main():
     hero_sizes = [(hh, hero.all_frames(hh)) for hh in hero.HEIGHTS]
     nframes = len(hero_sizes[0][1])
 
-    # --- luci che tremolano o girano: lanterna della Taberna, lente del
-    #     faro (una fascia chiara che gira), candele della nave ---
+    # --- luci che tremolano: lanterna della Taberna, candele della nave ---
     flickers = []
-    for scene, rect, center, lv, radius, kind in FLICKERS:
+    for scene, rect, center, lv, radius in FLICKERS:
         x0, y0, x1, y1 = rect
         gray = grays[scene]
         frames = []
-        if kind == "band":
-            yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
-            cx, cy = center
-            inside = ((xx - cx) / float(radius)) ** 2 + ((yy - cy) / float(lv[1])) ** 2 < 1.0
-            for k in range(lv[0]):
-                bx = cx - radius + (2 * radius) * k / float(lv[0])
-                band = np.clip(1.0 - np.abs(xx - bx) / 16.0, 0, 1) * inside
-                v = atkinson(np.clip(gray - 120 * band, 0, 255))
-                v = np.where(inside, v, scenes[scene])
-                frames.append(v[y0:y1, x0:x1])
-        else:
-            yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
-            fall = np.clip(1.0 - np.hypot(xx - center[0], (yy - center[1]) * 1.2) / radius, 0, 1)
-            for delta in lv:
-                v = atkinson(np.clip(gray + delta * fall, 0, 255))
-                v = np.where(fall > 0, v, scenes[scene])
-                frames.append(v[y0:y1, x0:x1])
+        yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
+        fall = np.clip(1.0 - np.hypot(xx - center[0], (yy - center[1]) * 1.2) / radius, 0, 1)
+        for delta in lv:
+            v = atkinson(np.clip(gray + delta * fall, 0, 255))
+            v = np.where(fall > 0, v, scenes[scene])
+            frames.append(v[y0:y1, x0:x1])
         flickers.append((rect, frames))
         save_preview("flicker_" + scene, np.hstack(frames))
 
@@ -458,7 +444,12 @@ def main():
         # il cappello come strato a parte; tutto ritagliato in larghezza ai
         # soli byte usati (meno memoria e blit piu' veloci sul 68000)
         f.write("/* protagonista: %d misure x %d fotogrammi + cappello */\n" % (len(hero_sizes), nframes))
+        # Righe condivise: testa e busto sono uguali in quasi tutti i
+        # fotogrammi, quindi ogni riga diversa (disegno + maschera) si salva
+        # una volta sola in un "pool" e ogni fotogramma e' un elenco di
+        # posizioni nel pool. Il cappello sta nello stesso pool.
         crop_info = []
+        hero_defs = []
         for hh, frames in hero_sizes:
             full_w, h = hero.size_for(hh)
             hats = hero.hat_layers(hh)
@@ -470,35 +461,32 @@ def main():
             w = (bx1 - bx0) * 8
             rb = bx1 - bx0
             crop_info.append((full_w, bx0 * 8))
-            data = b""
-            for fr in frames:
-                b, m = hero.to_bits(fr[:, bx0 * 8:bx1 * 8])
-                data += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
-            hat_off = len(data)
             hat_rows = max(int(np.nonzero((hl != 0).any(axis=1))[0][-1]) + 1 for hl in hats)
-            for hl in hats:
-                b, m = hero.to_bits(hl[:hat_rows, bx0 * 8:bx1 * 8])
-                data += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
-            c_array("hero_%d" % hh, data, f)
-            fsz = rb * h
-            f.write("static const Sprite hero_%d_frames[HERO_FRAMES] = {\n" % hh)
-            for i in range(nframes):
-                f.write("  { %d, %d, %d, hero_%d + %d, hero_%d + %d },\n" %
-                        (w, h, rb, hh, i * 2 * fsz, hh, i * 2 * fsz + fsz))
+            pool = bytearray()
+            seen = {}
+            index = []
+            for img, nrows in [(fr, h) for fr in frames] + [(hl[:hat_rows], hat_rows) for hl in hats]:
+                b, m = hero.to_bits(img[:, bx0 * 8:bx1 * 8])
+                bb = bits_to_bytes(b)[0]
+                mb = bits_to_bytes(m)[0]
+                for y in range(nrows):
+                    key = bb[y].tobytes() + mb[y].tobytes()
+                    if key not in seen:
+                        seen[key] = len(pool)
+                        pool += key
+                    index.append(seen[key])
+            assert len(pool) < 65536
+            c_array("hero_%d_pool" % hh, bytes(pool), f)
+            f.write("static const unsigned short hero_%d_rows[%d] = {\n" % (hh, len(index)))
+            for i in range(0, len(index), 16):
+                f.write("  " + ",".join(str(v) for v in index[i:i + 16]) + ",\n")
             f.write("};\n")
-            hsz = rb * hat_rows
-            f.write("static const Sprite hero_%d_hat[2] = {\n" % hh)
-            for i in range(2):
-                f.write("  { %d, %d, %d, hero_%d + %d, hero_%d + %d },\n" %
-                        (w, hat_rows, rb, hh, hat_off + i * 2 * hsz, hh, hat_off + i * 2 * hsz + hsz))
-            f.write("};\n")
-        f.write("const Sprite *const asset_hero[HERO_SIZES] = {\n")
-        for hh, _ in hero_sizes:
-            f.write("  hero_%d_frames,\n" % hh)
-        f.write("};\nconst Sprite *const asset_hero_hat[HERO_SIZES] = {\n")
-        for hh, _ in hero_sizes:
-            f.write("  hero_%d_hat,\n" % hh)
-        f.write("};\nconst short asset_hero_height[HERO_SIZES] = { %s };\n" %
+            hero_defs.append((w, h, rb, hat_rows, hh))
+        f.write("const HeroSprite asset_hero[HERO_SIZES] = {\n")
+        for (w, h, rb, hat_rows, hh) in hero_defs:
+            f.write("  { %d, %d, %d, %d, hero_%d_pool, hero_%d_rows },\n" % (w, h, rb, hat_rows, hh, hh))
+        f.write("};\n")
+        f.write("const short asset_hero_height[HERO_SIZES] = { %s };\n" %
                 ", ".join(str(hh) for hh, _ in hero_sizes))
         f.write("const short asset_hero_full_w[HERO_SIZES] = { %s };\n" %
                 ", ".join(str(c[0]) for c in crop_info))
@@ -576,7 +564,7 @@ enum { PATCH_LANTERNA, PATCH_CARTA, PATCH_TESCHIO, PATCH_COUNT };
 #define ICON_BIG %d
 #define HERO_SIZES %d
 #define HERO_FRAMES %d          /* fermo, parla, 6 camminata, occhi chiusi */
-#define FLICKER_COUNT %d          /* 0 lanterna Taberna, 1 lente del faro, 2 candele */
+#define FLICKER_COUNT %d          /* 0 lanterna della Taberna, 1 candele della nave */
 #define STAR_COUNT %d           /* coordinate: x/2, y */
 #define GULL_W 16
 #define GULL_H 5
@@ -590,9 +578,17 @@ extern const PackedBitmap asset_bg[BG_COUNT];
 extern const Bitmap asset_icon_small[ITEM_ICON_COUNT];
 extern const Bitmap asset_icon_big[ITEM_ICON_COUNT];
 extern const unsigned char *const asset_icon_mask; /* ICON_SMALL x ICON_SMALL ciascuna */
-extern const Sprite *const asset_hero[HERO_SIZES];
+/* protagonista a righe condivise: la riga y del fotogramma f sta in
+   pool + rows[f * h + y]; il cappello (2 varianti, hat_h righe) segue i
+   fotogrammi: rows[HERO_FRAMES * h + v * hat_h + y]. Ogni riga del pool e'
+   rowBytes byte di disegno seguiti da rowBytes byte di maschera. */
+typedef struct {
+    short w, h, rowBytes, hat_h;
+    const unsigned char *pool;
+    const unsigned short *rows;
+} HeroSprite;
+extern const HeroSprite asset_hero[HERO_SIZES];
 extern const short asset_hero_height[HERO_SIZES];
-extern const Sprite *const asset_hero_hat[HERO_SIZES];      /* [0] fermo, [1] testa abbassata */
 extern const short asset_hero_full_w[HERO_SIZES];            /* larghezza prima del ritaglio */
 extern const short asset_hero_ox[HERO_SIZES];                /* x del ritaglio nel disegno pieno */
 extern const unsigned char asset_hero_head_down[HERO_FRAMES];

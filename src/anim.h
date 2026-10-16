@@ -22,7 +22,9 @@ enum {
                      bocca (riga y0, da x p2 a p3, e le due righe sotto);
                      p1 chi parla (+ TALK_LIGHT: denti chiari invece della bocca
                      scura, per visi e barbe scure). x0..x1/y1: zona per Mela-D */
-    AN_FALL       /* cascata: le righe scorrono verso il basso p1 pixel per passo, p3 lentezza */
+    AN_FALL,      /* cascata: le righe scorrono verso il basso p1 pixel per passo, p3 lentezza */
+    AN_BEAM       /* lente del faro che gira: ombra dentro l'ellisse del rettangolo
+                     p1 passi per giro, p3 lentezza */
 };
 
 #define TALK_LIGHT 16

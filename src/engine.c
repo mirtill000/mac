@@ -105,9 +105,13 @@ void rebuild_background(void)
 
 int hero_size(void)
 {
-    static int last = -1, last_room = -1;
+    static int last = -1, last_room = -1, last_y = -1;
     const RoomDepth *d = &room_depth[G.room];
     int h, i, best = 0;
+    /* chiamata piu' volte per fotogramma: se non e' cambiato niente si
+       risponde subito (l'isteresi dipende solo dalla y e dalla stanza) */
+    if (last >= 0 && last_room == G.room && last_y == G.hy) return last;
+    last_y = G.hy;
     if (d->y_near == d->y_far) h = d->h_near;
     else h = d->h_far + (G.hy - d->y_far) * (d->h_near - d->h_far) / (d->y_near - d->y_far);
     for (i = 1; i < HERO_SIZES; i++) {
@@ -141,7 +145,7 @@ int hero_hidden(void) { return room_depth[G.room].h_far == 0; }
 GRect hero_rect(void)
 {
     int sz = hero_size();
-    const Sprite *s = &asset_hero[sz][0];
+    const HeroSprite *s = &asset_hero[sz];
     int full = asset_hero_full_w[sz], ox = asset_hero_ox[sz];
     GRect r;
     if (hero_hidden()) { r.x0 = r.y0 = r.x1 = r.y1 = 0; return r; }
@@ -170,36 +174,37 @@ int overlap(GRect a, GRect b)
     return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 }
 
-void hero_draw(void)
+/* Disegna il protagonista solo nelle righe [y0, y1): quando un'animazione
+   dello sfondo gli passa dietro basta ridisegnare la fascia toccata. */
+static void hero_draw_rows(int y0, int y1)
 {
     int f = hero_frame(), sz = hero_size();
     GRect r = hero_rect();
-    const Sprite *s = &asset_hero[sz][f];
+    const HeroSprite *s = &asset_hero[sz];
+    if (y1 > SCENE_H) y1 = SCENE_H;
+    gfx_clip(0, y0, FB_W, y1);
+    /* luce della stanza: negli ambienti bui il bianco si vela */
+    if (room_depth[G.room].tint) gfx_set_tint(PAT_LTGRAY);
+    /* ombra sotto i piedi: lega il personaggio al pavimento */
+    gfx_shadow(G.hx + (G.dir < 0 ? 1 : -1), G.hy + 1, s->h / 6, 2);
+    gfx_sprite_rows(s->pool, s->rows + f * s->h, s->w, s->h, s->rowBytes, r.x0, r.y0, G.dir < 0);
+    if (flag(F_HAT_WORN))                    /* il tricorno e' uno strato sopra la testa */
+        gfx_sprite_rows(s->pool, s->rows + HERO_FRAMES * s->h + asset_hero_head_down[f] * s->hat_h,
+                        s->w, s->hat_h, s->rowBytes, r.x0, r.y0, G.dir < 0);
+    gfx_set_tint(0);
+    gfx_noclip();
+}
+
+void hero_draw(void)
+{
+    GRect r = hero_rect();
     if (hero_hidden()) {                     /* gia' dipinto nella scena */
         hero_prev = r;                       /* rettangolo vuoto */
         hero_prev_valid = 0;
         hero_prev_key = hero_key();
         return;
     }
-    gfx_clip(0, 0, FB_W, SCENE_H);
-    /* luce della stanza: negli ambienti bui il bianco si vela */
-    if (room_depth[G.room].tint) gfx_set_tint(PAT_LTGRAY);
-    /* ombra sotto i piedi: lega il personaggio al pavimento */
-    gfx_shadow(G.hx + (G.dir < 0 ? 1 : -1), G.hy + 1, s->h / 6, 2);
-    if (G.dir < 0)
-        gfx_masked_mirror(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
-    else
-        gfx_masked(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
-    if (flag(F_HAT_WORN)) {
-        /* il tricorno e' uno strato sopra la testa */
-        const Sprite *h = &asset_hero_hat[sz][asset_hero_head_down[f]];
-        if (G.dir < 0)
-            gfx_masked_mirror(h->bits, h->mask, h->w, h->h, h->rowBytes, r.x0, r.y0);
-        else
-            gfx_masked(h->bits, h->mask, h->w, h->h, h->rowBytes, r.x0, r.y0);
-    }
-    gfx_set_tint(0);
-    gfx_noclip();
+    hero_draw_rows(0, SCENE_H);
     hero_prev = r;
     hero_prev_valid = 1;
     hero_prev_key = hero_key();
@@ -221,7 +226,7 @@ void update_play_overlays(void)
     GRect hr = hero_rect();
     int hero_changed = !hero_prev_valid || hk != hero_prev_key;
     int box_changed = bk != box_prev_key;
-    int hero_redraw, i;
+    int hero_redraw, i, band0 = SCENE_H, band1 = 0;
 
     /* le animazioni hanno ridisegnato parti di sfondo: se toccano il
        protagonista o il box, vanno ridisegnati sopra */
@@ -229,10 +234,24 @@ void update_play_overlays(void)
         GRect a = anim_rects[i];
         if (a.y1 > SCENE_H) a.y1 = SCENE_H;
         gfx_copy_from(bgbuf, a.x0, a.y0, a.x1, a.y1);
-        if (hero_prev_valid && overlap(a, hero_prev)) hero_changed = 1;
+        if (hero_prev_valid && overlap(a, hero_prev)) {
+            /* basta ridisegnare la fascia di righe toccata */
+            if (a.y0 < band0) band0 = a.y0;
+            if (a.y1 > band1) band1 = a.y1;
+        }
         if (box_prev_valid && overlap(a, box_prev)) box_changed = 1;
     }
     anim_nrects = 0;
+    if (!hero_changed && band0 < band1) {
+        /* il protagonista non si e' mosso: si ridisegna solo dove
+           l'animazione l'ha coperto (il disegno con maschera si puo'
+           ripetere sopra se stesso senza cambiare nulla) */
+        GRect b = hero_prev;
+        if (band0 > b.y0) b.y0 = (short)band0;
+        if (band1 < b.y1) b.y1 = (short)band1;
+        hero_draw_rows(b.y0, b.y1);
+        if (box_prev_valid && overlap(b, box_prev)) box_changed = 1;
+    }
 
     if (hero_changed && box_prev_valid && (overlap(hero_prev, box_prev) || overlap(hr, box_prev)))
         box_changed = 1;
@@ -413,11 +432,10 @@ void game_mouse(int x, int y)
         }
         ch = choice_at(x, y);
         mb = in_rect(x, y, MENU_BTN_X, SENTENCE_Y, 48, 14) ? 0 : -1;
-        if (vb != hover_verb || ch != hover_choice) {
+        if (vb != hover_verb || ch != hover_choice)
             panel_dirty = 1;              /* evidenziazione di verbi o scelte */
-        } else if (obj != hover_obj || mb != hover_menu) {
-            sentence_dirty = 1;           /* cambia solo la frase */
-        }
+        if (obj != hover_obj || mb != hover_menu)
+            sentence_dirty = 1;           /* frase o pulsante Menu */
         hover_obj = obj;
         hover_verb = vb;
         hover_choice = ch;
@@ -438,7 +456,10 @@ void click_modal(int x, int y)
         v = pause_at(x, y);
         switch (v) {
         case 0: modal = MODAL_NONE; break;
-        case 1: open_modal(MODAL_INVENTORY); break;
+        case 1:                           /* come Tab: non durante un dialogo */
+            if (msg_count || dlg_npc >= 0) plat_beep();
+            else open_modal(MODAL_INVENTORY);
+            break;
         case 2: open_modal(MODAL_SAVE); break;
         case 3: open_modal(MODAL_LOAD); break;
         case 4: open_modal(MODAL_OPTIONS); break;
@@ -637,7 +658,10 @@ void game_tick(void)
     }
 
     /* animazioni degli sfondi */
-    if (!need_rebuild && (mode == MODE_PLAY || mode == MODE_TITLE || mode == MODE_END)) {
+    /* sotto una finestra (pausa, salvataggio...) lo schermo e' fermo: le
+       animazioni aspettano, invece di lavorare per niente */
+    if (!need_rebuild && modal == MODAL_NONE &&
+        (mode == MODE_PLAY || mode == MODE_TITLE || mode == MODE_END)) {
         GRect box, got[ANIM_RECTS];
         const GRect *avoid = 0;
         int speaker = -1, n, i;

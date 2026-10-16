@@ -112,6 +112,9 @@ int deserialize(const unsigned char *d, int len)
     for (i = 0; i < G.ninv; i++)
         if (G.inv[i] < 0 || G.inv[i] >= IT_COUNT) { G.ninv = (unsigned char)i; break; }
     if (G.dir != 1 && G.dir != -1) G.dir = 1;
+    /* salvataggi della versione con la sola Parte I, fatti dopo la vittoria:
+       senza questa flag la Parte II non si aprirebbe mai */
+    if (flag(F_GAME_WON) && !flag(F_PART2)) set_flag(F_PART2);
     if (!walkable(G.hx, G.hy)) clamp_walk(&G.hx, &G.hy);
     return 0;
 }
@@ -187,6 +190,8 @@ void do_load(int slot)
     mode = MODE_PLAY;
     need_rebuild = 1;
     need_full = 1;
+    /* salvato mentre scorrevano i messaggi del finale: Brodo e' gia' sconfitto */
+    if (flag(F_BRODO_WON)) show_chapter(0);
 }
 
 

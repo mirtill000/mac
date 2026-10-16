@@ -33,6 +33,11 @@ if(CMAKE_SYSTEM_NAME MATCHES Retro68)
         TYPE "APPL"
     )
     target_compile_options(PuertoPolli PRIVATE -O2 -ffunction-sections -Wall -Wno-pointer-sign -Wno-array-bounds)
+    # Le parti che girano a ogni fotogramma (grafica, animazioni, motore)
+    # restano a -O2; storia, finestre, salvataggi, messaggi e camminata non
+    # incidono sulla velocita' e si compilano piu' piccoli.
+    set_source_files_properties(src/script.c src/ui.c src/save.c src/msg.c src/walk.c src/mac/main_mac.c
+        PROPERTIES COMPILE_OPTIONS "-Os")
     set_target_properties(PuertoPolli PROPERTIES
         LINK_FLAGS "-Wl,-gc-sections -Wl,--mac-strip-macsbug")
 else()

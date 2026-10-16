@@ -9,6 +9,16 @@
  *   5. Spiaggia: Apri cassa / Usa chiave con cassa -> calamaro + libro
  *   6. Molo: Dai calamaro al gabbiano, Raccogli piuma
  *   7. Rovine: parla col Custode e dagli cappello, piuma e libro
+ * Parte II
+ *   8. Molo: parla con Barbapollo                -> bussola
+ *   9. Faro: Dai bussola al gabbiano -> chiave; Apri porta
+ *  10. Dentro: Raccogli lanterna e carta, Usa lanterna con meccanismo,
+ *      Spingi lente
+ * Parte III
+ *  11. Guarda la carta nautica (inventario)       -> Grotta sulla mappa
+ *  12. Grotta: entra con la lanterna, Raccogli teschio, Apri forziere
+ *  13. Dai teschio a Ossobuco, Usa barca, sali sulla nave
+ *  14. Parla con Brodo e vinci il duello (fini nel quaderno del forziere)
  */
 #include "engine.h"
 #include "assets.h"
@@ -49,9 +59,10 @@ static const char *const item_titles[IT_COUNT] = {
 const Hotspot hotspots[] = {
     /* id            room         nome                 x    y    w    h    wx   wy  face exit */
     { H_PIUMA,      ROOM_DOCK,   "piuma",             40, 204,  28,  26,  98, 228, -1, -1 },
-    { H_TABERNA,    ROOM_DOCK,   "porta della Taberna", 412, 111, 34, 76, 428, 203, 1, ROOM_TAVERN },
-    { H_INSEGNA,    ROOM_DOCK,   "insegna",          390,  86,  88,  22, 428, 203,  1, -1 },
+    /* la porta solo nella parte libera: a destra c'e' Barbapollo davanti */
+    { H_TABERNA,    ROOM_DOCK,   "porta della Taberna", 404, 111, 24, 76, 428, 203, 1, ROOM_TAVERN },
     { H_BARBA,      ROOM_DOCK,   "Capitan Barbapollo", 425, 141, 66, 93, 392, 228, 1, -1 },
+    { H_INSEGNA,    ROOM_DOCK,   "insegna",          390,  86,  88,  22, 428, 203,  1, -1 },
     { H_MOZZO,      ROOM_DOCK,   "Mozzo Pino",       333, 126,  40,  76, 312, 214,  1, -1 },
     { H_GABBIANO,   ROOM_DOCK,   "gabbiano",          84, 152,  32,  32, 132, 222, -1, -1 },
     { H_BANCARELLA, ROOM_DOCK,   "bancarella",       235, 101,  75,  95, 270, 210,  1, -1 },
@@ -221,7 +232,7 @@ const Anim anims[] = {
     { ROOM_FARO,    AN_WAVE,      0, 132, 120, 198, 1,          10,  4 },
     { ROOM_FARO,    AN_FLYER,     0,  14, 512,  70, 2,           0,  0 },
     /* dentro il faro: la lente gira, ma solo quando l'hai riparata */
-    { ROOM_FARO_IN, AN_FLICKER, 264,   0, 376, 112, 1,           1,  3, F_LIGHT_ON + 1 },
+    { ROOM_FARO_IN, AN_BEAM,    264,   0, 376, 112, 10,          0,  3, F_LIGHT_ON + 1 },
     /* grotta: il ruscello e la mandibola di Ossobuco */
     { ROOM_GROTTA,  AN_WAVE,    232, 206, 328, 240, 1,          10,  4 },
     { ROOM_GROTTA,  AN_TALK,    368, 160, 384, 163, SP_OSSOBUCO, 374, 380 },
@@ -232,7 +243,7 @@ const Anim anims[] = {
     { ROOM_NAVE,    AN_WAVE,    152,  20, 344, 150, 1,          24,  6 },
     { ROOM_NAVE,    AN_WAVE,    208, 160, 512, 240, 1,          10,  4 },
     /* cabina: le candele; la mandibola di Brodo */
-    { ROOM_NAVE_IN, AN_FLICKER, 224,  96, 288, 168, 2,           0,  0 },
+    { ROOM_NAVE_IN, AN_FLICKER, 224,  96, 288, 168, 1,           0,  0 },
     { ROOM_NAVE_IN, AN_TALK,    320, 125, 336, 128, SP_BRODO,  322, 329 },
 };
 const int anim_count = sizeof(anims) / sizeof(anims[0]);
@@ -365,9 +376,10 @@ void script_enter_room(int room)
         say(SP_NARRATORE, "La nave fantasma appare e scompare tra le onde, come un sogno che non vuole finire.");
         say(SP_OSSOBUCO, "Ecco la Minestrina. Io aspetto qui. Se torni.");
     }
-    if (room == ROOM_NAVE_IN && !flag(F_MET_BRODO)) {
-        say(SP_NARRATORE, "Il capitano non è più qui, ma la sua presenza si sente ancora. "
-                          "E forse non è solo un ricordo.");
+    if (room == ROOM_NAVE_IN && !flag(F_SEEN_CABIN)) {
+        set_flag(F_SEEN_CABIN);
+        say(SP_NARRATORE, "Una cabina piena di ombre. Al tavolo siede un capitano che non respira "
+                          "più da cent'anni... ma che non ha mai smesso di aspettare la cena.");
     }
 }
 
@@ -506,10 +518,17 @@ static int fn_mozzo_talk(int o1, int o2)
         say(SP_MOZZO, "Se diventi capitano di una nave vera, mi prendi come nostromo? Ho già il cappello!");
         return 1;
     }
-    if (flag(F_PART2) && !flag(F_FARO_KEY)) {
-        say(SP_MOZZO, "Al faro c'è un gabbiano che ruba tutto quello che luccica. Una volta mi ha preso un bottone.");
-        say(SP_MOZZO, "Il capitano invece ha una bussola che luccica come il sole. Non la presta a nessuno. "
-                      "Ai pirati veri, forse.");
+    if (flag(F_PART2)) {
+        if (!flag(F_GOT_COMPASS)) {
+            say(SP_MOZZO, "Al faro c'è un gabbiano che ruba tutto quello che luccica. Una volta mi ha preso un bottone.");
+            say(SP_MOZZO, "Il capitano invece ha una bussola che luccica come il sole. Non la presta a nessuno. "
+                          "Ai pirati veri, forse.");
+        } else if (!flag(F_FARO_KEY)) {
+            say(SP_MOZZO, "Il capitano ti ha dato la sua bussola? A me non fa toccare nemmeno il secchio!");
+            say(SP_MOZZO, "Attento al gabbiano del faro: quella bussola gli piacerebbe da morire.");
+        } else {
+            say(SP_MOZZO, "Se il faro torna a girare arriveranno navi vere. Magari una con un posto da nostromo.");
+        }
         return 1;
     }
     if (!flag(F_MOZZO_1)) {
@@ -529,7 +548,15 @@ static int fn_mozzo_talk(int o1, int o2)
     return 1;
 }
 
-static int fn_open_map(int o1, int o2)   { (void)o1; (void)o2; open_map(); return 1; }
+static int fn_open_map(int o1, int o2)
+{
+    (void)o1; (void)o2;
+    if (current_room() == ROOM_NAVE || current_room() == ROOM_NAVE_IN)
+        say(SP_HERO, "Siamo in mezzo al mare: con la mappa dell'isola non vado da nessuna parte.");
+    else
+        open_map();
+    return 1;
+}
 static int fn_to_tavern(int o1, int o2)  { (void)o1; (void)o2; go_room(ROOM_TAVERN); return 1; }
 static int fn_to_dock(int o1, int o2)    { (void)o1; (void)o2; go_room(ROOM_DOCK); return 1; }
 static int fn_talk_oste(int o1, int o2)  { (void)o1; (void)o2; start_dialog(SP_OSTE); return 1; }
@@ -577,8 +604,10 @@ static int fn_push_lens(int o1, int o2)
     say(SP_NARRATORE, "Il fascio di luce spazza il mare. Lontano, verso est, illumina una "
                       "nave pallida come un lenzuolo.");
     say(SP_NARRATORE, "La nave fantasma scivola verso una grotta sulla costa est... e sparisce.");
-    say(SP_HERO, "L'oste mi aveva detto di non nominare mai il brodo. "
-                 "Ho la brutta sensazione che c'entri qualcosa.");
+    say(SP_HERO, flag(F_HEARD_BRODO) ? "L'oste mi aveva detto di non nominare mai il brodo. "
+                                       "Ho la brutta sensazione che c'entri qualcosa."
+                                     : "Una nave fantasma... e fin quassù arriva odore di brodo. "
+                                       "Ho un brutto presentimento.");
     queue_call(CALL_PART3);
     return 1;
 }
@@ -663,12 +692,15 @@ typedef struct {
     short verbs;                 /* maschera di verbi: VB(V_GUARDA) | ... */
     short o1, o2;                /* o2: NONE, ANY_ITEM o un oggetto preciso */
     short c1, c2;                /* condizioni: IF, IFNOT, HAS, HASNOT (0 = nessuna) */
-    Line lines[4];
+    const Line *lines;           /* battute, chiuse da {0, 0}: vedi L(...) */
     short set;                   /* SET(flag) */
     short add, rem;              /* ADD(oggetto), REM(oggetto) */
     int (*fn)(int o1, int o2);
 } Rule;
 
+/* le battute di una regola: un elenco a parte, lungo quanto serve (prima
+   ogni regola riservava spazio per quattro, e quasi tutte ne usano una) */
+#define L(...)      ((const Line[]){ __VA_ARGS__, {0, 0} })
 #define VB(v)       (1 << (v))
 #define NONE        OBJ_NONE
 #define ANY_ITEM    (-3)
@@ -686,283 +718,266 @@ typedef struct {
 
 static const Rule rules[] = {
     /* ---- oggetti dell'inventario ---- */
-    { VB(V_GUARDA), IT_BOTTIGLIA, NONE, 0, 0, { {TU, "Una bottiglia di grog. Fuma. Le bottiglie non dovrebbero fumare."} } },
-    { VB(V_GUARDA), IT_MONETA,    NONE, 0, 0, { {TU, "Un doblone. Tutti i miei risparmi."} } },
-    { VB(V_GUARDA), IT_CHIAVE,    NONE, IF(F_FARO_KEY), 0, { {TU, "La chiave del faro. Ha ancora una piuma di gabbiano attaccata."} } },
-    { VB(V_GUARDA), IT_CHIAVE,    NONE, 0, 0, { {TU, "Una chiave arrugginita che odora di aringa."} } },
-    { VB(V_GUARDA), IT_BUSSOLA,   NONE, 0, 0, { {TU, "Una bussola d'ottone, lucida come uno specchio. L'ago punta sempre verso la Taberna."} } },
-    { VB(V_USA),    IT_BUSSOLA,   NONE, 0, 0, { {TU, "Punta verso la Taberna. Come sempre. Forse è rotta, forse è saggia."} } },
-    { VB(V_GUARDA), IT_LANTERNA,  NONE, 0, 0, { {TU, "Una lanterna a olio del faro. Fa luce e un po' di fumo."} } },
-    { VB(V_GUARDA) | VB(V_USA) | VB(V_APRI), IT_CARTA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_read_chart },
-    { VB(V_GUARDA), IT_TESCHIO,   NONE, 0, 0, { {TU, "Un teschio sorridente. Gli ho dato un nome: Gennaro."} } },
-    { VB(V_USA),    IT_TESCHIO,   NONE, 0, 0, { {TU, "Essere o non essere... No, troppo teatrale."} } },
-    { VB(V_USA), IT_CHIAVE,    H_PORTA_F, 0, 0, { {0, 0} }, 0, 0, 0, fn_faro_door },
-    { VB(V_USA), IT_LANTERNA,  H_MECCANISMO, IF(F_GEARS_OILED), 0, { {TU, "Ho già oliato tutto. Brillano come i denti dell'oste. Cioè, no: molto di più."} } },
-    { VB(V_USA), IT_LANTERNA,  H_MECCANISMO, 0, 0, {
-        {TU, "Verso un po' d'olio della lanterna negli ingranaggi. Glu glu."},
-        {TU, "Ne resta abbastanza per far luce. Ottimo, non si sa mai."} }, SET(F_GEARS_OILED) },
-    { VB(V_USA), IT_LANTERNA,  H_LENTE, 0, 0, { {TU, "La lente ha già la sua luce. Il problema è che non gira."} } },
-    { VB(V_USA), IT_LANTERNA,  H_INGRESSO, 0, 0, { {0, 0} }, 0, 0, 0, fn_enter_cave },
-    { VB(V_USA), IT_TESCHIO,   H_BARCA, 0, 0, { {SP_OSSOBUCO, "Il pedaggio si dà a me, non alla barca. La barca non colleziona niente."} } },
-    { VB(V_GUARDA), IT_MAPPA,     NONE, 0, 0, { {TU, "La mappa di Puerto Polli. Se la uso posso spostarmi sull'isola."} } },
-    { VB(V_GUARDA), IT_PIUMA,     NONE, 0, 0, { {TU, "Una piuma di gabbiano. Decisamente NON di pollo."} } },
-    { VB(V_GUARDA), IT_CALAMARO,  NONE, 0, 0, { {TU, "Un calamaro essiccato. Il portafortuna del capitano. Puzza di fortuna."} } },
-    { VB(V_GUARDA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, { {TU, "Il mio cappello da pirata. Ce l'ho in testa e mi sta benissimo."} } },
-    { VB(V_GUARDA), IT_CAPPELLO,  NONE, 0, 0, { {TU, "Un cappello da pirata. Starebbe meglio sulla mia testa."} } },
-    { VB(V_GUARDA), IT_LIBRO,     NONE, 0, 0, { {TU, "\"Il Codice dei Pirati\". Articolo 1: mai fidarsi di un pollo."},
-                                                {TU, "Articolo 2: vedi articolo 1."} } },
-    { VB(V_USA), IT_MAPPA,     NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
-    { VB(V_USA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, { {TU, "Ce l'ho già in testa. Toglierlo? Mai più."} } },
-    { VB(V_USA), IT_CAPPELLO,  NONE, 0, 0, { {TU, "Me lo metto in testa. Mi sento già più pirata. E un po' umido."} }, SET(F_HAT_WORN) },
-    { VB(V_USA), IT_BOTTIGLIA, NONE, 0, 0, { {TU, "Berlo io? Fuma! Neanche morto. Beh, forse da morto."} } },
-    { VB(V_USA), IT_LIBRO,     NONE, 0, 0, { {TU, "Leggo a caso: \"Articolo 14: il grog va bevuto, non annusato.\" Profondo."} } },
-    { VB(V_USA), IT_PIUMA,     NONE, 0, 0, { {TU, "Mi faccio il solletico. Ih ih. Ok, basta."} } },
-    { VB(V_USA), IT_CALAMARO,  NONE, 0, 0, { {TU, "Non ho COSÌ fame."} } },
-    { VB(V_USA), IT_MONETA,    NONE, 0, 0, { {TU, "Potrei spenderla. Alla Taberna, per esempio."} } },
-    { VB(V_APRI), IT_LIBRO,    NONE, 0, 0, { {TU, "\"Articolo 7: un vero pirata ha cappello, piuma e questo libro.\" Interessante..."} } },
-    { VB(V_USA), IT_CHIAVE,    H_CASSA, 0, 0, { {0, 0} }, 0, 0, 0, open_crate },
+    { VB(V_GUARDA), IT_BOTTIGLIA, NONE, 0, 0, L({TU, "Una bottiglia di grog. Fuma. Le bottiglie non dovrebbero fumare."}) },
+    { VB(V_GUARDA), IT_MONETA,    NONE, 0, 0, L({TU, "Un doblone. Tutti i miei risparmi."}) },
+    { VB(V_GUARDA), IT_CHIAVE,    NONE, IF(F_FARO_KEY), 0, L({TU, "La chiave del faro. Ha ancora una piuma di gabbiano attaccata."}) },
+    { VB(V_GUARDA), IT_CHIAVE,    NONE, 0, 0, L({TU, "Una chiave arrugginita che odora di aringa."}) },
+    { VB(V_GUARDA), IT_BUSSOLA,   NONE, 0, 0, L({TU, "Una bussola d'ottone, lucida come uno specchio. L'ago punta sempre verso la Taberna."}) },
+    { VB(V_USA),    IT_BUSSOLA,   NONE, 0, 0, L({TU, "Punta verso la Taberna. Come sempre. Forse è rotta, forse è saggia."}) },
+    { VB(V_GUARDA), IT_LANTERNA,  NONE, 0, 0, L({TU, "Una lanterna a olio del faro. Fa luce e un po' di fumo."}) },
+    { VB(V_GUARDA) | VB(V_USA) | VB(V_APRI), IT_CARTA, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_read_chart },
+    { VB(V_GUARDA), IT_TESCHIO,   NONE, 0, 0, L({TU, "Un teschio sorridente. Gli ho dato un nome: Gennaro."}) },
+    { VB(V_USA),    IT_TESCHIO,   NONE, 0, 0, L({TU, "Essere o non essere... No, troppo teatrale."}) },
+    { VB(V_USA), IT_CHIAVE,    H_PORTA_F, 0, 0, L({0, 0}), 0, 0, 0, fn_faro_door },
+    { VB(V_USA), IT_LANTERNA,  H_MECCANISMO, IF(F_GEARS_OILED), 0, L({TU, "Ho già oliato tutto. Brillano come i denti dell'oste. Cioè, no: molto di più."}) },
+    { VB(V_USA), IT_LANTERNA,  H_MECCANISMO, 0, 0, L({TU, "Verso un po' d'olio della lanterna negli ingranaggi. Glu glu."},
+        {TU, "Ne resta abbastanza per far luce. Ottimo, non si sa mai."}), SET(F_GEARS_OILED) },
+    { VB(V_USA), IT_LANTERNA,  H_LENTE, 0, 0, L({TU, "La lente ha già la sua luce. Il problema è che non gira."}) },
+    { VB(V_USA), IT_LANTERNA,  H_INGRESSO, 0, 0, L({0, 0}), 0, 0, 0, fn_enter_cave },
+    { VB(V_USA), IT_TESCHIO,   H_BARCA, 0, 0, L({SP_OSSOBUCO, "Il pedaggio si dà a me, non alla barca. La barca non colleziona niente."}) },
+    { VB(V_GUARDA), IT_MAPPA,     NONE, 0, 0, L({TU, "La mappa di Puerto Polli. Se la uso posso spostarmi sull'isola."}) },
+    { VB(V_GUARDA), IT_PIUMA,     NONE, 0, 0, L({TU, "Una piuma di gabbiano. Decisamente NON di pollo."}) },
+    { VB(V_GUARDA), IT_CALAMARO,  NONE, 0, 0, L({TU, "Un calamaro essiccato. Il portafortuna del capitano. Puzza di fortuna."}) },
+    { VB(V_GUARDA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, L({TU, "Il mio cappello da pirata. Ce l'ho in testa e mi sta benissimo."}) },
+    { VB(V_GUARDA), IT_CAPPELLO,  NONE, 0, 0, L({TU, "Un cappello da pirata. Starebbe meglio sulla mia testa."}) },
+    { VB(V_GUARDA), IT_LIBRO,     NONE, 0, 0, L({TU, "\"Il Codice dei Pirati\". Articolo 1: mai fidarsi di un pollo."},
+                                                {TU, "Articolo 2: vedi articolo 1."}) },
+    { VB(V_USA), IT_MAPPA,     NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_open_map },
+    { VB(V_USA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, L({TU, "Ce l'ho già in testa. Toglierlo? Mai più."}) },
+    { VB(V_USA), IT_CAPPELLO,  NONE, 0, 0, L({TU, "Me lo metto in testa. Mi sento già più pirata. E un po' umido."}), SET(F_HAT_WORN) },
+    { VB(V_USA), IT_BOTTIGLIA, NONE, 0, 0, L({TU, "Berlo io? Fuma! Neanche morto. Beh, forse da morto."}) },
+    { VB(V_USA), IT_LIBRO,     NONE, 0, 0, L({TU, "Leggo a caso: \"Articolo 14: il grog va bevuto, non annusato.\" Profondo."}) },
+    { VB(V_USA), IT_PIUMA,     NONE, 0, 0, L({TU, "Mi faccio il solletico. Ih ih. Ok, basta."}) },
+    { VB(V_USA), IT_CALAMARO,  NONE, 0, 0, L({TU, "Non ho COSÌ fame."}) },
+    { VB(V_USA), IT_MONETA,    NONE, 0, 0, L({TU, "Potrei spenderla. Alla Taberna, per esempio."}) },
+    { VB(V_APRI), IT_LIBRO,    NONE, 0, 0, L({TU, "\"Articolo 7: un vero pirata ha cappello, piuma e questo libro.\" Interessante..."}) },
+    { VB(V_USA), IT_CHIAVE,    H_CASSA, 0, 0, L({0, 0}), 0, 0, 0, open_crate },
 
     /* ---- molo ---- */
-    { VB(V_GUARDA), H_TABERNA, NONE, 0, 0, { {TU, "La Taberna. Il posto più malfamato dell'isola. E anche l'unico."} } },
-    { VB(V_APRI) | VB(V_VAI), H_TABERNA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_to_tavern },
-    { VB(V_CHIUDI), H_TABERNA, NONE, 0, 0, { {TU, "È già chiusa. Più o meno."} } },
-    { VB(V_GUARDA), H_INSEGNA, NONE, 0, 0, { {TU, "\"TABERNA\". Qualcuno ha cancellato una V. O aggiunto una B."},
-                                             {TU, "I filologi dell'isola ne discutono ancora."} } },
+    { VB(V_GUARDA), H_TABERNA, NONE, 0, 0, L({TU, "La Taberna. Il posto più malfamato dell'isola. E anche l'unico."}) },
+    { VB(V_APRI), H_TABERNA, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_to_tavern },
+    { VB(V_CHIUDI), H_TABERNA, NONE, 0, 0, L({TU, "È già chiusa. Più o meno."}) },
+    { VB(V_GUARDA), H_INSEGNA, NONE, 0, 0, L({TU, "\"TABERNA\". Qualcuno ha cancellato una V. O aggiunto una B."},
+                                             {TU, "I filologi dell'isola ne discutono ancora."}) },
 
-    { VB(V_GUARDA), H_BARBA, NONE, IFNOT(F_GOT_KEY), 0, { {TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."},
-                                                          {TU, "Ha l'aria assetata."} } },
-    { VB(V_GUARDA), H_BARBA, NONE, 0, 0, { {TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."} } },
-    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), HAS(IT_CAPPELLO), {
-        {SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
+    { VB(V_GUARDA), H_BARBA, NONE, IFNOT(F_GOT_KEY), 0, L({TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."},
+                                                          {TU, "Ha l'aria assetata."}) },
+    { VB(V_GUARDA), H_BARBA, NONE, 0, 0, L({TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."}) },
+    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), HAS(IT_CAPPELLO), L({SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
         {SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare."},
-        {TU, "(Forse dovrei mettermi il cappello che ho in tasca.)"} } },
-    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), 0, {
-        {SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
-        {SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare."} } },
-    { VB(V_PARLA),  H_BARBA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_barba },
-    { VB(V_DAI), H_BARBA, ANY_ITEM, IFNOT(F_HAT_WORN), 0, { {SP_BARBA, "Prima mettiti un cappello. Non faccio affari con i turisti."} } },
-    { VB(V_DAI), H_BARBA, IT_BOTTIGLIA, 0, 0, {
-        {SP_BARBA, "Il mio grog! Fumante come piace a me!"},
+        {TU, "(Forse dovrei mettermi il cappello che ho in tasca.)"}) },
+    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), 0, L({SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
+        {SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare."}) },
+    { VB(V_PARLA),  H_BARBA, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_talk_barba },
+    { VB(V_DAI), H_BARBA, ANY_ITEM, IFNOT(F_HAT_WORN), 0, L({SP_BARBA, "Prima mettiti un cappello. Non faccio affari con i turisti."}) },
+    { VB(V_DAI), H_BARBA, IT_BOTTIGLIA, 0, 0, L({SP_BARBA, "Il mio grog! Fumante come piace a me!"},
         {NARR, "Il capitano lo beve tutto d'un fiato. Gli fumano anche le orecchie."},
         {SP_BARBA, "Affare fatto, mozzo. Ecco la chiave della cassa sulla spiaggia."},
-        {SP_BARBA, "Non chiedermi perché odora di aringa."} }, SET(F_GOT_KEY), ADD(IT_CHIAVE), REM(IT_BOTTIGLIA) },
-    { VB(V_DAI), H_BARBA, IT_MONETA, 0, 0, { {SP_BARBA, "Una moneta? Cosa me ne faccio? Portami del grog, piuttosto!"} } },
-    { VB(V_DAI), H_BARBA, ANY_ITEM, 0, 0, { {SP_BARBA, "Non mi serve. A me serve qualcosa che fumi e che si beva."} } },
-    { TOCCA, H_BARBA, NONE, 0, 0, { {SP_BARBA, "Mettimi le mani addosso e ti uso come àncora."} } },
+        {SP_BARBA, "Non chiedermi perché odora di aringa."}), SET(F_GOT_KEY), ADD(IT_CHIAVE), REM(IT_BOTTIGLIA) },
+    { VB(V_DAI), H_BARBA, IT_MONETA, 0, 0, L({SP_BARBA, "Una moneta? Cosa me ne faccio? Portami del grog, piuttosto!"}) },
+    { VB(V_DAI), H_BARBA, ANY_ITEM, 0, 0, L({SP_BARBA, "Non mi serve. A me serve qualcosa che fumi e che si beva."}) },
+    { TOCCA, H_BARBA, NONE, 0, 0, L({SP_BARBA, "Mettimi le mani addosso e ti uso come àncora."}) },
 
-    { VB(V_GUARDA), H_MOZZO, NONE, 0, 0, { {TU, "Un pirata piccolo ma determinato. Ha un cappello più grande delle sue ambizioni."} } },
-    { VB(V_PARLA),  H_MOZZO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_mozzo_talk },
-    { VB(V_DAI),    H_MOZZO, ANY_ITEM, 0, 0, { {SP_MOZZO, "Per me? No, grazie. Il capitano dice di non accettare regali dagli sconosciuti."} } },
+    { VB(V_GUARDA), H_MOZZO, NONE, 0, 0, L({TU, "Un pirata piccolo ma determinato. Ha un cappello più grande delle sue ambizioni."}) },
+    { VB(V_PARLA),  H_MOZZO, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_mozzo_talk },
+    { VB(V_DAI),    H_MOZZO, ANY_ITEM, 0, 0, L({SP_MOZZO, "Per me? No, grazie. Il capitano dice di non accettare regali dagli sconosciuti."}) },
 
-    { VB(V_GUARDA),   H_GABBIANO, NONE, 0, 0, { {TU, "Un gabbiano. Mi fissa con l'aria di chi sa qualcosa che io non so."} } },
-    { VB(V_RACCOGLI), H_GABBIANO, NONE, 0, 0, { {TU, "Ci ho provato. Mi ha beccato. Due volte."} } },
-    { VB(V_PARLA),    H_GABBIANO, NONE, 0, 0, { {TU, "Ciao, gabbiano."}, {SP_GABBIANO, "Squaaak."}, {TU, "Credo fosse un \"no\"."} } },
-    { VB(V_DAI), H_GABBIANO, IT_CALAMARO, 0, 0, {
-        {NARR, "Il gabbiano inghiotte il calamaro intero, senza masticare."},
+    { VB(V_GUARDA),   H_GABBIANO, NONE, 0, 0, L({TU, "Un gabbiano. Mi fissa con l'aria di chi sa qualcosa che io non so."}) },
+    { VB(V_RACCOGLI), H_GABBIANO, NONE, 0, 0, L({TU, "Ci ho provato. Mi ha beccato. Due volte."}) },
+    { VB(V_PARLA),    H_GABBIANO, NONE, 0, 0, L({TU, "Ciao, gabbiano."}, {SP_GABBIANO, "Squaaak."}, {TU, "Credo fosse un \"no\"."}) },
+    { VB(V_DAI), H_GABBIANO, IT_CALAMARO, 0, 0, L({NARR, "Il gabbiano inghiotte il calamaro intero, senza masticare."},
         {NARR, "Poi, per gratitudine (o per digestione), lascia cadere una piuma sul molo."},
-        {TU, "Grazie... credo."} }, SET(F_GULL_FED), 0, REM(IT_CALAMARO) },
-    { VB(V_DAI), H_GABBIANO, ANY_ITEM, 0, 0, { {TU, "Il gabbiano lo guarda con disprezzo. È un gabbiano esigente."} } },
+        {TU, "Grazie... credo."}), SET(F_GULL_FED), 0, REM(IT_CALAMARO) },
+    { VB(V_DAI), H_GABBIANO, ANY_ITEM, 0, 0, L({TU, "Il gabbiano lo guarda con disprezzo. È un gabbiano esigente."}) },
 
-    { VB(V_GUARDA),   H_PIUMA, NONE, 0, 0, { {TU, "Una piuma di gabbiano, ancora tiepida. Bleah."} } },
-    { VB(V_RACCOGLI), H_PIUMA, NONE, 0, 0, { {TU, "Presa! Una piuma di un uccello che NON è un pollo."} }, SET(F_FEATHER_TAKEN), ADD(IT_PIUMA) },
+    { VB(V_GUARDA),   H_PIUMA, NONE, 0, 0, L({TU, "Una piuma di gabbiano, ancora tiepida. Bleah."}) },
+    { VB(V_RACCOGLI), H_PIUMA, NONE, 0, 0, L({TU, "Presa! Una piuma di un uccello che NON è un pollo."}), SET(F_FEATHER_TAKEN), ADD(IT_PIUMA) },
 
-    { VB(V_GUARDA),   H_BANCARELLA, NONE, 0, 0, { {TU, "Vende souvenir: calamite a forma di pollo, cartoline di polli e... polli."} } },
-    { VB(V_RACCOGLI), H_BANCARELLA, NONE, 0, 0, { {TU, "Ho già abbastanza polli nella mia vita."} } },
-    { VB(V_PARLA),    H_BANCARELLA, NONE, 0, 0, { {TU, "Non c'è nessuno. Il venditore sarà andato a comprare altri polli."} } },
-    { VB(V_GUARDA),   H_VELIERO, NONE, 0, 0, { {TU, "Un bel veliero. Non è mio. Niente qui è mio, a parte i debiti."} } },
-    { VB(V_GUARDA),   H_PAESE, NONE, 0, 0, { {TU, "Puerto Polli: case bianche e tetti rossi. Credo. Qui è tutto in bianco e nero."} } },
+    { VB(V_GUARDA),   H_BANCARELLA, NONE, 0, 0, L({TU, "Vende souvenir: calamite a forma di pollo, cartoline di polli e... polli."}) },
+    { VB(V_RACCOGLI), H_BANCARELLA, NONE, 0, 0, L({TU, "Ho già abbastanza polli nella mia vita."}) },
+    { VB(V_PARLA),    H_BANCARELLA, NONE, 0, 0, L({TU, "Non c'è nessuno. Il venditore sarà andato a comprare altri polli."}) },
+    { VB(V_GUARDA),   H_VELIERO, NONE, 0, 0, L({TU, "Un bel veliero. Non è mio. Niente qui è mio, a parte i debiti."}) },
+    { VB(V_GUARDA),   H_PAESE, NONE, 0, 0, L({TU, "Puerto Polli: case bianche e tetti rossi. Credo. Qui è tutto in bianco e nero."}) },
 
     /* ---- taberna ---- */
-    { VB(V_GUARDA), H_OSTE, NONE, 0, 0, { {TU, "L'oste. Un occhio solo, ma ti tiene d'occhio lo stesso."} } },
-    { VB(V_PARLA),  H_OSTE, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_oste },
-    { VB(V_DAI), H_OSTE, IT_MONETA, IF(F_GOT_GROG), 0, { {SP_OSTE, "Hai già avuto il tuo grog. Due grog per un novellino sono un rischio sanitario."} } },
-    { VB(V_DAI), H_OSTE, IT_MONETA, 0, 0, {
-        {SP_OSTE, "Una moneta? Affare fatto! Ecco a te una bottiglia di grog."},
+    { VB(V_GUARDA), H_OSTE, NONE, 0, 0, L({TU, "L'oste. Un occhio solo, ma ti tiene d'occhio lo stesso."}) },
+    { VB(V_PARLA),  H_OSTE, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_talk_oste },
+    { VB(V_DAI), H_OSTE, IT_MONETA, 0, 0, L({SP_OSTE, "Una moneta? Affare fatto! Ecco a te una bottiglia di grog."},
         {TU, "Ehm... perché la bottiglia fuma?"},
-        {SP_OSTE, "È il grog. Fa così. Non berlo vicino alle candele."} }, SET(F_GOT_GROG), ADD(IT_BOTTIGLIA), REM(IT_MONETA) },
-    { VB(V_DAI), H_OSTE, ANY_ITEM, 0, 0, { {SP_OSTE, "Niente baratti. Accetto solo monete. E qualche volta galline."} } },
-    { VB(V_GUARDA), H_BANDIERA, NONE, 0, 0, { {TU, "Un teschio con due ossa incrociate. O due cosce di pollo? Con questa luce non si capisce."} } },
-    { VB(V_RACCOGLI) | VB(V_TIRA), H_BANDIERA, NONE, 0, 0, { {SP_OSTE, "Giù le mani dalla bandiera! È un cimelio di famiglia."} } },
-    { VB(V_GUARDA), H_QUADRO, NONE, 0, 0, { {TU, "Il ritratto di un pollo con la benda sull'occhio. C'è una dedica: \"Al mio oste preferito\"."} } },
-    { VB(V_GUARDA),   H_LANTERNA, NONE, 0, 0, { {TU, "Una lanterna. Fa più fumo che luce. Come il grog."} } },
-    { VB(V_RACCOGLI), H_LANTERNA, NONE, 0, 0, { {TU, "Scotta. E poi resterebbe al buio l'oste, che già ci vede per metà."} } },
-    { VB(V_GUARDA), H_FINESTRA, NONE, 0, 0, { {TU, "Una finestra così sporca che fuori sembra sempre notte."} } },
-    { VB(V_APRI),   H_FINESTRA, NONE, 0, 0, { {TU, "È sigillata da anni di grasso di pollo fritto."} } },
-    { VB(V_GUARDA),   H_BOTTIGLIE, NONE, 0, 0, { {TU, "Grog, grog d'annata, grog light e un barattolo con scritto \"NON grog\"."} } },
-    { VB(V_RACCOGLI), H_BOTTIGLIE, NONE, 0, 0, { {SP_OSTE, "Ehi! Quelle si pagano. Una moneta a bottiglia."} } },
-    { VB(V_GUARDA),   H_BOCCALE, NONE, 0, 0, { {TU, "Un boccale vuoto. O quasi. Meglio non indagare."} } },
-    { VB(V_RACCOGLI), H_BOCCALE, NONE, 0, 0, { {TU, "È appiccicato al bancone. Non voglio sapere con cosa."} } },
-    { VB(V_GUARDA), H_USCITA_T, NONE, 0, 0, { {TU, "L'uscita. Porta al molo."} } },
-    { VB(V_VAI) | VB(V_APRI), H_USCITA_T, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_to_dock },
+        {SP_OSTE, "È il grog. Fa così. Non berlo vicino alle candele."}), SET(F_GOT_GROG), ADD(IT_BOTTIGLIA), REM(IT_MONETA) },
+    { VB(V_DAI), H_OSTE, ANY_ITEM, 0, 0, L({SP_OSTE, "Niente baratti. Accetto solo monete. E qualche volta galline."}) },
+    { VB(V_GUARDA), H_BANDIERA, NONE, 0, 0, L({TU, "Un teschio con due ossa incrociate. O due cosce di pollo? Con questa luce non si capisce."}) },
+    { VB(V_RACCOGLI) | VB(V_TIRA), H_BANDIERA, NONE, 0, 0, L({SP_OSTE, "Giù le mani dalla bandiera! È un cimelio di famiglia."}) },
+    { VB(V_GUARDA), H_QUADRO, NONE, 0, 0, L({TU, "Il ritratto di un pollo con la benda sull'occhio. C'è una dedica: \"Al mio oste preferito\"."}) },
+    { VB(V_GUARDA),   H_LANTERNA, NONE, 0, 0, L({TU, "Una lanterna. Fa più fumo che luce. Come il grog."}) },
+    { VB(V_RACCOGLI), H_LANTERNA, NONE, 0, 0, L({TU, "Scotta. E poi resterebbe al buio l'oste, che già ci vede per metà."}) },
+    { VB(V_GUARDA), H_FINESTRA, NONE, 0, 0, L({TU, "Una finestra così sporca che fuori sembra sempre notte."}) },
+    { VB(V_APRI),   H_FINESTRA, NONE, 0, 0, L({TU, "È sigillata da anni di grasso di pollo fritto."}) },
+    { VB(V_GUARDA),   H_BOTTIGLIE, NONE, 0, 0, L({TU, "Grog, grog d'annata, grog light e un barattolo con scritto \"NON grog\"."}) },
+    { VB(V_RACCOGLI), H_BOTTIGLIE, NONE, 0, 0, L({SP_OSTE, "Ehi! Quelle si pagano. Una moneta a bottiglia."}) },
+    { VB(V_GUARDA),   H_BOCCALE, NONE, 0, 0, L({TU, "Un boccale vuoto. O quasi. Meglio non indagare."}) },
+    { VB(V_RACCOGLI), H_BOCCALE, NONE, 0, 0, L({TU, "È appiccicato al bancone. Non voglio sapere con cosa."}) },
+    { VB(V_GUARDA), H_USCITA_T, NONE, 0, 0, L({TU, "L'uscita. Porta al molo."}) },
+    { VB(V_APRI), H_USCITA_T, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_to_dock },
 
     /* ---- spiaggia ---- */
-    { VB(V_GUARDA),   H_CAPPELLO, NONE, 0, 0, { {TU, "Un cappello da pirata! Un po' bagnato, un po' mangiucchiato, ma ha stile."} } },
-    { VB(V_RACCOGLI), H_CAPPELLO, NONE, 0, 0, { {TU, "È incastrato tra le assi del relitto. Devo tirarlo con forza."} } },
-    { VB(V_TIRA), H_CAPPELLO, NONE, 0, 0, {
-        {TU, "Ooooh... issa! Ce l'ho!"},
-        {NARR, "Un granchio, che ci abitava dentro, se ne va profondamente offeso."} }, SET(F_HAT_TAKEN), ADD(IT_CAPPELLO) },
-    { VB(V_GUARDA), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, { {TU, "La cassa è aperta e vuota. Come il mio portafoglio."} } },
-    { VB(V_GUARDA), H_CASSA, NONE, 0, 0, { {TU, "Una vecchia cassa chiusa con un lucchetto. Sopra c'è scritto \"B.P.\""} } },
-    { VB(V_APRI),   H_CASSA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, open_crate },
-    { VB(V_CHIUDI), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, { {TU, "Meglio lasciarla aperta: non ho più la chiave."} } },
-    { VB(V_CHIUDI), H_CASSA, NONE, 0, 0, { {TU, "È già chiusa."} } },
-    { SPOSTA, H_CASSA, NONE, 0, 0, { {TU, "Pesa una tonnellata. Sarà piena di piombo. O di zuppa."} } },
-    { VB(V_RACCOGLI), H_CASSA, NONE, 0, 0, { {TU, "Troppo pesante. E poi non mi entra in tasca."} } },
-    { VB(V_GUARDA), H_RELITTO, NONE, IFNOT(F_HAT_TAKEN), 0, {
-        {TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."},
-        {TU, "C'è un cappello incastrato tra le assi."} } },
-    { VB(V_GUARDA), H_RELITTO, NONE, 0, 0, { {TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."} } },
-    { SPOSTA, H_RELITTO, NONE, 0, 0, { {TU, "Non si muove. È più arenato di me."} } },
-    { VB(V_GUARDA), H_FARO, NONE, 0, 0, { {TU, "Il faro. Dicono che sia chiuso per ferie da vent'anni."} } },
-    { VB(V_GUARDA), H_SCOGLIERA, NONE, 0, 0, { {TU, "Scogli a strapiombo. Ottimi per meditare, pessimi per cadere."} } },
-    { VB(V_GUARDA), H_PALME, NONE, 0, 0, { {TU, "Palme. Tante palme. Nessuna noce di cocco, ovviamente."} } },
-    { TOCCA, H_PALME, NONE, 0, 0, { {TU, "Non sono così forte. Non ancora."} } },
-    { VB(V_GUARDA), H_MARE, NONE, 0, 0, { {TU, "Il mare. Bagnato, come sempre."} } },
+    { VB(V_GUARDA),   H_CAPPELLO, NONE, 0, 0, L({TU, "Un cappello da pirata! Un po' bagnato, un po' mangiucchiato, ma ha stile."}) },
+    { VB(V_RACCOGLI), H_CAPPELLO, NONE, 0, 0, L({TU, "È incastrato tra le assi del relitto. Devo tirarlo con forza."}) },
+    { VB(V_TIRA), H_CAPPELLO, NONE, 0, 0, L({TU, "Ooooh... issa! Ce l'ho!"},
+        {NARR, "Un granchio, che ci abitava dentro, se ne va profondamente offeso."}), SET(F_HAT_TAKEN), ADD(IT_CAPPELLO) },
+    { VB(V_GUARDA), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, L({TU, "La cassa è aperta e vuota. Come il mio portafoglio."}) },
+    { VB(V_GUARDA), H_CASSA, NONE, 0, 0, L({TU, "Una vecchia cassa chiusa con un lucchetto. Sopra c'è scritto \"B.P.\""}) },
+    { VB(V_APRI),   H_CASSA, NONE, 0, 0, L({0, 0}), 0, 0, 0, open_crate },
+    { VB(V_CHIUDI), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, L({TU, "Meglio lasciarla aperta: non ho più la chiave."}) },
+    { VB(V_CHIUDI), H_CASSA, NONE, 0, 0, L({TU, "È già chiusa."}) },
+    { SPOSTA, H_CASSA, NONE, 0, 0, L({TU, "Pesa una tonnellata. Sarà piena di piombo. O di zuppa."}) },
+    { VB(V_RACCOGLI), H_CASSA, NONE, 0, 0, L({TU, "Troppo pesante. E poi non mi entra in tasca."}) },
+    { VB(V_GUARDA), H_RELITTO, NONE, IFNOT(F_HAT_TAKEN), 0, L({TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."},
+        {TU, "C'è un cappello incastrato tra le assi."}) },
+    { VB(V_GUARDA), H_RELITTO, NONE, 0, 0, L({TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."}) },
+    { SPOSTA, H_RELITTO, NONE, 0, 0, L({TU, "Non si muove. È più arenato di me."}) },
+    { VB(V_GUARDA), H_FARO, NONE, 0, 0, L({TU, "Il faro. Dicono che sia chiuso per ferie da vent'anni."}) },
+    { VB(V_GUARDA), H_SCOGLIERA, NONE, 0, 0, L({TU, "Scogli a strapiombo. Ottimi per meditare, pessimi per cadere."}) },
+    { VB(V_GUARDA), H_PALME, NONE, 0, 0, L({TU, "Palme. Tante palme. Nessuna noce di cocco, ovviamente."}) },
+    { TOCCA, H_PALME, NONE, 0, 0, L({TU, "Non sono così forte. Non ancora."}) },
+    { VB(V_GUARDA), H_MARE, NONE, 0, 0, L({TU, "Il mare. Bagnato, come sempre."}) },
 
     /* ---- rovine ---- */
-    { VB(V_GUARDA), H_CUSTODE, NONE, IF(F_MET_CUSTODE), 0, { {TU, "Il Custode di Puerto Polli. Un pollo con un contratto a tempo indeterminato."} } },
-    { VB(V_GUARDA), H_CUSTODE, NONE, 0, 0, { {TU, "Un pollo. Un pollo ENORME, alto quanto me, con l'aria molto seria."} } },
-    { VB(V_PARLA),  H_CUSTODE, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_custode },
-    { VB(V_DAI), H_CUSTODE, ANY_ITEM, 0, 0, { {0, 0} }, 0, 0, 0, fn_give_custode },
-    { VB(V_RACCOGLI), H_CUSTODE, NONE, 0, 0, { {SP_CUSTODE, "Prova a sollevarmi e ti becco fino a Natale."} } },
-    { SPOSTA, H_CUSTODE, NONE, 0, 0, { {SP_CUSTODE, "Ehi! Rispetto per le istituzioni!"} } },
-    { VB(V_GUARDA), H_LUNA, NONE, 0, 0, { {TU, "La luna piena. Ha la faccia di qualcuno che ha visto troppe storie di pirati."} } },
-    { VB(V_GUARDA), H_NAVE_F, NONE, 0, 0, { {TU, "Una nave fantasma! O una nave normale molto pallida."} } },
-    { VB(V_GUARDA), H_BITTA, NONE, 0, 0, { {TU, "Una bitta per legare le barche. Qualcuno ci ha inciso: \"W i polli\"."} } },
-    { SPOSTA, H_BITTA, NONE, 0, 0, { {TU, "Non si muove. Il molo ringrazia."} } },
-    { VB(V_GUARDA), H_PALMA, NONE, 0, 0, { {TU, "Una palma che si sporge sul mare, come se volesse andarsene anche lei."} } },
+    { VB(V_GUARDA), H_CUSTODE, NONE, IF(F_MET_CUSTODE), 0, L({TU, "Il Custode di Puerto Polli. Un pollo con un contratto a tempo indeterminato."}) },
+    { VB(V_GUARDA), H_CUSTODE, NONE, 0, 0, L({TU, "Un pollo. Un pollo ENORME, alto quanto me, con l'aria molto seria."}) },
+    { VB(V_PARLA),  H_CUSTODE, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_talk_custode },
+    { VB(V_DAI), H_CUSTODE, ANY_ITEM, 0, 0, L({0, 0}), 0, 0, 0, fn_give_custode },
+    { VB(V_RACCOGLI), H_CUSTODE, NONE, 0, 0, L({SP_CUSTODE, "Prova a sollevarmi e ti becco fino a Natale."}) },
+    { SPOSTA, H_CUSTODE, NONE, 0, 0, L({SP_CUSTODE, "Ehi! Rispetto per le istituzioni!"}) },
+    { VB(V_GUARDA), H_LUNA, NONE, 0, 0, L({TU, "La luna piena. Ha la faccia di qualcuno che ha visto troppe storie di pirati."}) },
+    { VB(V_GUARDA), H_NAVE_F, NONE, 0, 0, L({TU, "Una nave fantasma! O una nave normale molto pallida."}) },
+    { VB(V_GUARDA), H_BITTA, NONE, 0, 0, L({TU, "Una bitta per legare le barche. Qualcuno ci ha inciso: \"W i polli\"."}) },
+    { SPOSTA, H_BITTA, NONE, 0, 0, L({TU, "Non si muove. Il molo ringrazia."}) },
+    { VB(V_GUARDA), H_PALMA, NONE, 0, 0, L({TU, "Una palma che si sporge sul mare, come se volesse andarsene anche lei."}) },
 
     /* ---- faro, esterno ---- */
-    { VB(V_GUARDA), H_FARO_E, NONE, IF(F_LIGHT_ON), 0, { {TU, "Il faro gira! Ora sì che sembra un faro, e non una stella pigra."} } },
-    { VB(V_GUARDA), H_FARO_E, NONE, 0, 0, { {TU, "Il faro. È acceso, ma la luce è ferma: dal mare sembra una stella qualunque."},
-                                            {TU, "Nessuna nave lo prende sul serio."} } },
-    { VB(V_GUARDA), H_CASA, NONE, 0, 0, { {TU, "La casa del guardiano. Le finestre sono chiuse da vent'anni. Le tende pure."} } },
-    { VB(V_GUARDA), H_PORTA_F, NONE, IF(F_FARO_OPEN), 0, { {TU, "La porta del faro. L'ho aperta io, con la chiave del gabbiano."} } },
-    { VB(V_GUARDA), H_PORTA_F, NONE, 0, 0, { {TU, "Una porta robusta, chiusa a chiave. C'è un biglietto: «Torno subito. Il guardiano.»"} } },
-    { VB(V_APRI) | VB(V_VAI) | VB(V_SPINGI), H_PORTA_F, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_faro_door },
-    { VB(V_CHIUDI), H_PORTA_F, NONE, 0, 0, { {TU, "Meglio lasciarla com'è."} } },
-    { VB(V_GUARDA), H_GABBIANO_F, NONE, IF(F_FARO_KEY), 0, { {TU, "Il gabbiano si specchia nella bussola. È innamorato. Di sé stesso."} } },
-    { VB(V_GUARDA), H_GABBIANO_F, NONE, 0, 0, {
-        {TU, "Un gabbiano grasso e solenne. Ha una chiave appesa al collo con uno spago."},
-        {TU, "Si dice che i gabbiani vadano matti per le cose che luccicano."} }, SET(F_KNOWS_GULL_KEY) },
-    { VB(V_PARLA), H_GABBIANO_F, NONE, IF(F_FARO_KEY), 0, { {TU, "Grazie per la chiave."}, {SP_GABBIANO, "Squaak."} } },
-    { VB(V_PARLA), H_GABBIANO_F, NONE, 0, 0, {
-        {TU, "Bel gabbiano. Mi presti quella chiave?"},
+    { VB(V_GUARDA), H_FARO_E, NONE, IF(F_LIGHT_ON), 0, L({TU, "Il faro gira! Ora sì che sembra un faro, e non una stella pigra."}) },
+    { VB(V_GUARDA), H_FARO_E, NONE, 0, 0, L({TU, "Il faro. È acceso, ma la luce è ferma: dal mare sembra una stella qualunque."},
+                                            {TU, "Nessuna nave lo prende sul serio."}) },
+    { VB(V_GUARDA), H_CASA, NONE, 0, 0, L({TU, "La casa del guardiano. Le finestre sono chiuse da vent'anni. Le tende pure."}) },
+    { VB(V_GUARDA), H_PORTA_F, NONE, IF(F_FARO_OPEN), 0, L({TU, "La porta del faro. L'ho aperta io, con la chiave del gabbiano."}) },
+    { VB(V_GUARDA), H_PORTA_F, NONE, 0, 0, L({TU, "Una porta robusta, chiusa a chiave. C'è un biglietto: «Torno subito. Il guardiano.»"}) },
+    { VB(V_APRI) | VB(V_VAI) | VB(V_SPINGI), H_PORTA_F, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_faro_door },
+    { VB(V_CHIUDI), H_PORTA_F, NONE, 0, 0, L({TU, "Meglio lasciarla com'è."}) },
+    { VB(V_GUARDA), H_GABBIANO_F, NONE, IF(F_FARO_KEY), 0, L({TU, "Il gabbiano si specchia nella bussola. È innamorato. Di sé stesso."}) },
+    { VB(V_GUARDA), H_GABBIANO_F, NONE, 0, 0, L({TU, "Un gabbiano grasso e solenne. Ha una chiave appesa al collo con uno spago."},
+        {TU, "Si dice che i gabbiani vadano matti per le cose che luccicano."}), SET(F_KNOWS_GULL_KEY) },
+    { VB(V_PARLA), H_GABBIANO_F, NONE, IF(F_FARO_KEY), 0, L({TU, "Grazie per la chiave."}, {SP_GABBIANO, "Squaak."}) },
+    { VB(V_PARLA), H_GABBIANO_F, NONE, 0, 0, L({TU, "Bel gabbiano. Mi presti quella chiave?"},
         {SP_GABBIANO, "Squaaak! Squak squak."},
-        {TU, "Credo voglia dire «solo in cambio di qualcosa che luccica»."} }, SET(F_KNOWS_GULL_KEY) },
-    { TOCCA, H_GABBIANO_F, NONE, 0, 0, { {TU, "Mi ha beccato il naso. Un altro gabbiano. È una persecuzione."} } },
-    { VB(V_DAI), H_GABBIANO_F, IT_BUSSOLA, 0, 0, {
-        {NARR, "Il gabbiano fissa la bussola. La bussola fissa il gabbiano."},
+        {TU, "Credo voglia dire «solo in cambio di qualcosa che luccica»."}), SET(F_KNOWS_GULL_KEY) },
+    { TOCCA, H_GABBIANO_F, NONE, 0, 0, L({TU, "Mi ha beccato il naso. Un altro gabbiano. È una persecuzione."}) },
+    { VB(V_DAI), H_GABBIANO_F, IT_BUSSOLA, 0, 0, L({NARR, "Il gabbiano fissa la bussola. La bussola fissa il gabbiano."},
         {NARR, "Scambio fatto: il gabbiano si tiene la bussola e ti lancia la chiave."},
-        {TU, "Una chiave! Spero sia del faro e non della sua cassetta delle lettere."} }, SET(F_FARO_KEY), ADD(IT_CHIAVE), REM(IT_BUSSOLA) },
-    { VB(V_DAI), H_GABBIANO_F, ANY_ITEM, 0, 0, { {TU, "Il gabbiano scuote la testa. Non luccica abbastanza."} } },
-    { VB(V_GUARDA), H_PALO, NONE, 0, 0, { {TU, "Il palo preferito del gabbiano. Si vede dalle... decorazioni."} } },
-    { VB(V_GUARDA), H_CARTELLO, NONE, 0, 0, { {TU, "«FARO». Utile, per chi non avesse notato l'enorme torre bianca."} } },
-    { TOCCA, H_CARTELLO, NONE, 0, 0, { {TU, "È piantato bene. Più del faro, forse."} } },
-    { VB(V_GUARDA), H_VELA, NONE, IF(F_LIGHT_ON), 0, { {TU, "Una barca a vela. Ora che il faro gira, forse si fermerà a Puerto Polli."} } },
-    { VB(V_GUARDA), H_VELA, NONE, 0, 0, { {TU, "Una barca a vela che passa al largo, senza fermarsi. Come tutte."} } },
-    { VB(V_GUARDA), H_SOLE, NONE, 0, 0, { {TU, "Il sole sul mare. Tramonta o sorge? A Puerto Polli non si capisce mai."} } },
-    { VB(V_GUARDA), H_MARE_F, NONE, 0, 0, { {TU, "Il mare, giù in fondo. Meglio non sporgersi."} } },
-    { VB(V_GUARDA), H_STACCIONATA, NONE, 0, 0, { {TU, "Una staccionata che separa il sentiero dal vuoto. Grazie, staccionata."} } },
-    { SPOSTA, H_STACCIONATA, NONE, 0, 0, { {TU, "Toccare la sola cosa che mi separa dal vuoto? No, grazie."} } },
-    { VB(V_GUARDA), H_SCALA_F, NONE, 0, 0, { {TU, "Una scalinata scavata nella roccia. Porta alla porta del faro."} } },
-    { VB(V_GUARDA), H_SENTIERO_F, NONE, 0, 0, { {TU, "Il sentiero che torna verso il resto dell'isola."} } },
+        {TU, "Una chiave! Spero sia del faro e non della sua cassetta delle lettere."}), SET(F_FARO_KEY), ADD(IT_CHIAVE), REM(IT_BUSSOLA) },
+    { VB(V_DAI), H_GABBIANO_F, ANY_ITEM, 0, 0, L({TU, "Il gabbiano scuote la testa. Non luccica abbastanza."}) },
+    { VB(V_GUARDA), H_PALO, NONE, 0, 0, L({TU, "Il palo preferito del gabbiano. Si vede dalle... decorazioni."}) },
+    { VB(V_GUARDA), H_CARTELLO, NONE, 0, 0, L({TU, "«FARO». Utile, per chi non avesse notato l'enorme torre bianca."}) },
+    { TOCCA, H_CARTELLO, NONE, 0, 0, L({TU, "È piantato bene. Più del faro, forse."}) },
+    { VB(V_GUARDA), H_VELA, NONE, IF(F_LIGHT_ON), 0, L({TU, "Una barca a vela. Ora che il faro gira, forse si fermerà a Puerto Polli."}) },
+    { VB(V_GUARDA), H_VELA, NONE, 0, 0, L({TU, "Una barca a vela che passa al largo, senza fermarsi. Come tutte."}) },
+    { VB(V_GUARDA), H_SOLE, NONE, 0, 0, L({TU, "Il sole sul mare. Tramonta o sorge? A Puerto Polli non si capisce mai."}) },
+    { VB(V_GUARDA), H_MARE_F, NONE, 0, 0, L({TU, "Il mare, giù in fondo. Meglio non sporgersi."}) },
+    { VB(V_GUARDA), H_STACCIONATA, NONE, 0, 0, L({TU, "Una staccionata che separa il sentiero dal vuoto. Grazie, staccionata."}) },
+    { SPOSTA, H_STACCIONATA, NONE, 0, 0, L({TU, "Toccare la sola cosa che mi separa dal vuoto? No, grazie."}) },
+    { VB(V_GUARDA), H_SCALA_F, NONE, 0, 0, L({TU, "Una scalinata scavata nella roccia. Porta alla porta del faro."}) },
+    { VB(V_GUARDA), H_SENTIERO_F, NONE, 0, 0, L({TU, "Il sentiero che torna verso il resto dell'isola."}) },
 
     /* ---- faro, interno ---- */
-    { VB(V_GUARDA), H_LENTE, NONE, IF(F_LIGHT_ON), 0, { {TU, "La luce del faro ruota lenta, ma continua. Un segnale che sfida il buio."} } },
-    { VB(V_GUARDA), H_LENTE, NONE, 0, 0, { {TU, "Una lente enorme, accesa ma ferma."},
-                                           {TU, "Una luce che non gira è solo una lampadina presuntuosa."} } },
-    { SPOSTA, H_LENTE, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_push_lens },
-    { SPOSTA, H_MECCANISMO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_push_lens },
-    { VB(V_RACCOGLI), H_LENTE, NONE, 0, 0, { {TU, "Pesa quanto una mucca di vetro."} } },
-    { VB(V_GUARDA), H_MECCANISMO, NONE, IF(F_GEARS_OILED), 0, { {TU, "Ingranaggi lucidi d'olio. Pronti a girare: basta una bella spinta."} } },
-    { VB(V_GUARDA), H_MECCANISMO, NONE, 0, 0, { {TU, "Il meccanismo che fa girare la lente. Gli ingranaggi sono pieni di ruggine."},
-                                                {TU, "Cigolano solo a guardarli. Ci vorrebbe dell'olio."} } },
-    { VB(V_APRI), H_MECCANISMO, NONE, 0, 0, { {TU, "Gli ingranaggi sono già in vista. Ci vuole olio, non un cacciavite."} } },
-    { VB(V_GUARDA), H_LANTERNA_F, NONE, 0, 0, { {TU, "Una lanterna a olio, piena fino all'orlo."} } },
-    { VB(V_RACCOGLI), H_LANTERNA_F, NONE, 0, 0, { {TU, "La prendo. La luce non è mai troppa. Nemmeno dentro un faro."} }, SET(F_LANTERN_TAKEN), ADD(IT_LANTERNA) },
-    { VB(V_GUARDA), H_CARTA, NONE, 0, 0, { {TU, "Una carta nautica dell'isola, piena di appunti del guardiano."} } },
-    { VB(V_RACCOGLI), H_CARTA, NONE, 0, 0, { {TU, "La arrotolo e la metto via. Il guardiano non se ne accorgerà: non c'è da vent'anni."} }, SET(F_CHART_TAKEN), ADD(IT_CARTA) },
-    { VB(V_GUARDA), H_LUMINO, NONE, 0, 0, { {TU, "Un lumino da notte. Il guardiano aveva paura del buio. In un faro."} } },
-    { VB(V_RACCOGLI), H_LUMINO, NONE, 0, 0, { {TU, "È avvitato al pavimento. Il guardiano ci teneva molto."} } },
-    { VB(V_GUARDA), H_TAVOLO, NONE, 0, 0, { {TU, "Il tavolo del guardiano: compassi, righelli e una macchia di caffè a forma di pollo."} } },
-    { VB(V_GUARDA), H_SCALA_I, NONE, 0, 0, { {TU, "La scala a chiocciola che scende. Gira più lei del faro."} } },
-    { VB(V_GUARDA), H_PORTICINA, NONE, 0, 0, { {TU, "Una porticina. Uno sgabuzzino, a giudicare dall'odore di scopa."} } },
-    { VB(V_APRI), H_PORTICINA, NONE, 0, 0, { {TU, "Scope, secchi e un calendario di vent'anni fa. Richiudo prima che mi cada tutto addosso."} } },
-    { VB(V_GUARDA), H_FINESTRE, NONE, 0, 0, { {TU, "Da quassù si vede tutto il mare. E tutto il mare vede me."} } },
-    { VB(V_APRI), H_FINESTRE, NONE, 0, 0, { {TU, "Con questo vento? Volerei via insieme alla carta nautica."} } },
+    { VB(V_GUARDA), H_LENTE, NONE, IF(F_LIGHT_ON), 0, L({TU, "La luce del faro ruota lenta, ma continua. Un segnale che sfida il buio."}) },
+    { VB(V_GUARDA), H_LENTE, NONE, 0, 0, L({TU, "Una lente enorme, accesa ma ferma."},
+                                           {TU, "Una luce che non gira è solo una lampadina presuntuosa."}) },
+    { SPOSTA, H_LENTE, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_push_lens },
+    { SPOSTA, H_MECCANISMO, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_push_lens },
+    { VB(V_RACCOGLI), H_LENTE, NONE, 0, 0, L({TU, "Pesa quanto una mucca di vetro."}) },
+    { VB(V_GUARDA), H_MECCANISMO, NONE, IF(F_GEARS_OILED), 0, L({TU, "Ingranaggi lucidi d'olio. Pronti a girare: basta una bella spinta."}) },
+    { VB(V_GUARDA), H_MECCANISMO, NONE, 0, 0, L({TU, "Il meccanismo che fa girare la lente. Gli ingranaggi sono pieni di ruggine."},
+                                                {TU, "Cigolano solo a guardarli. Ci vorrebbe dell'olio."}) },
+    { VB(V_APRI), H_MECCANISMO, NONE, 0, 0, L({TU, "Gli ingranaggi sono già in vista. Ci vuole olio, non un cacciavite."}) },
+    { VB(V_GUARDA), H_LANTERNA_F, NONE, 0, 0, L({TU, "Una lanterna a olio, piena fino all'orlo."}) },
+    { VB(V_RACCOGLI), H_LANTERNA_F, NONE, 0, 0, L({TU, "La prendo. La luce non è mai troppa. Nemmeno dentro un faro."}), SET(F_LANTERN_TAKEN), ADD(IT_LANTERNA) },
+    { VB(V_GUARDA), H_CARTA, NONE, 0, 0, L({TU, "Una carta nautica dell'isola, piena di appunti del guardiano."}) },
+    { VB(V_RACCOGLI), H_CARTA, NONE, 0, 0, L({TU, "La arrotolo e la metto via. Il guardiano non se ne accorgerà: non c'è da vent'anni."}), SET(F_CHART_TAKEN), ADD(IT_CARTA) },
+    { VB(V_GUARDA), H_LUMINO, NONE, 0, 0, L({TU, "Un lumino da notte. Il guardiano aveva paura del buio. In un faro."}) },
+    { VB(V_RACCOGLI), H_LUMINO, NONE, 0, 0, L({TU, "È avvitato al pavimento. Il guardiano ci teneva molto."}) },
+    { VB(V_GUARDA), H_TAVOLO, NONE, 0, 0, L({TU, "Il tavolo del guardiano: compassi, righelli e una macchia di caffè a forma di pollo."}) },
+    { VB(V_GUARDA), H_SCALA_I, NONE, 0, 0, L({TU, "La scala a chiocciola che scende. Gira più lei del faro."}) },
+    { VB(V_GUARDA), H_PORTICINA, NONE, 0, 0, L({TU, "Una porticina. Uno sgabuzzino, a giudicare dall'odore di scopa."}) },
+    { VB(V_APRI), H_PORTICINA, NONE, 0, 0, L({TU, "Scope, secchi e un calendario di vent'anni fa. Richiudo prima che mi cada tutto addosso."}) },
+    { VB(V_GUARDA), H_FINESTRE, NONE, 0, 0, L({TU, "Da quassù si vede tutto il mare. E tutto il mare vede me."}) },
+    { VB(V_APRI), H_FINESTRE, NONE, 0, 0, L({TU, "Con questo vento? Volerei via insieme alla carta nautica."}) },
 
     /* ---- grotta, esterno ---- */
-    { VB(V_GUARDA), H_OSSOBUCO, NONE, 0, 0, { {TU, "Uno scheletro seduto accanto a una barca. Ha l'aria di chi aspetta da molto, molto tempo."} } },
-    { VB(V_PARLA),  H_OSSOBUCO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_osso },
-    { VB(V_DAI), H_OSSOBUCO, IT_TESCHIO, 0, 0, {
-        {SP_OSSOBUCO, "Un teschio! E che zigomi! Va dritto nella mia collezione."},
-        {SP_OSSOBUCO, "Pedaggio pagato. Quando vuoi partire, sali sulla barca."} }, SET(F_FERRY), 0, REM(IT_TESCHIO) },
-    { VB(V_DAI), H_OSSOBUCO, ANY_ITEM, 0, 0, { {SP_OSSOBUCO, "Non è un teschio. Accetto solo teschi. È una questione di principio."} } },
-    { TOCCA, H_OSSOBUCO, NONE, 0, 0, { {SP_OSSOBUCO, "Piano! Se mi smonti, poi chi mi rimonta?"} } },
-    { VB(V_GUARDA), H_BARCA, NONE, 0, 0, { {TU, "La barca di Ossobuco. Sulla prua c'è scritto: «Solo andata»."} } },
-    { VB(V_USA) | VB(V_VAI) | VB(V_SPINGI), H_BARCA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_ferry },
-    { VB(V_GUARDA), H_CASSETTA, NONE, 0, 0, { {TU, "Una cassetta di legno con la scritta «Dispensa»."} } },
-    { VB(V_APRI), H_CASSETTA, NONE, 0, 0, { {TU, "Solo lische di pesce e una ricevuta: «Capitan Brodo, 1 pollo. Da pagare.»"} } },
-    { VB(V_RACCOGLI), H_CASSETTA, NONE, 0, 0, { {TU, "Puzza troppo di lische. Resta qui."} } },
-    { VB(V_GUARDA), H_INGRESSO, NONE, 0, 0, { {TU, "L'ingresso della grotta. Dentro è buio come la stiva di un galeone."} } },
-    { VB(V_VAI) | VB(V_APRI), H_INGRESSO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_enter_cave },
-    { VB(V_GUARDA), H_RUSCELLO, NONE, 0, 0, { {TU, "Un ruscello caldo che esce dalla grotta. Profuma di sedano."} } },
-    { VB(V_RACCOGLI), H_RUSCELLO, NONE, 0, 0, { {TU, "Scotta! E poi non ho una tazza."} } },
-    { VB(V_GUARDA), H_ROCCE, NONE, 0, 0, { {TU, "Rocce scure e appuntite. Non è un posto per picnic."} } },
-    { VB(V_GUARDA), H_SENTIERO_G, NONE, 0, 0, { {TU, "Il sentiero che torna verso il resto dell'isola."} } },
+    { VB(V_GUARDA), H_OSSOBUCO, NONE, 0, 0, L({TU, "Uno scheletro seduto accanto a una barca. Ha l'aria di chi aspetta da molto, molto tempo."}) },
+    { VB(V_PARLA),  H_OSSOBUCO, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_talk_osso },
+    { VB(V_DAI), H_OSSOBUCO, IT_TESCHIO, 0, 0, L({SP_OSSOBUCO, "Un teschio! E che zigomi! Va dritto nella mia collezione."},
+        {SP_OSSOBUCO, "Pedaggio pagato. Quando vuoi partire, sali sulla barca."}), SET(F_FERRY), 0, REM(IT_TESCHIO) },
+    { VB(V_DAI), H_OSSOBUCO, ANY_ITEM, 0, 0, L({SP_OSSOBUCO, "Non è un teschio. Accetto solo teschi. È una questione di principio."}) },
+    { TOCCA, H_OSSOBUCO, NONE, 0, 0, L({SP_OSSOBUCO, "Piano! Se mi smonti, poi chi mi rimonta?"}) },
+    { VB(V_GUARDA), H_BARCA, NONE, 0, 0, L({TU, "La barca di Ossobuco. Sulla prua c'è scritto: «Solo andata»."}) },
+    { VB(V_USA) | VB(V_VAI) | VB(V_SPINGI), H_BARCA, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_ferry },
+    { VB(V_GUARDA), H_CASSETTA, NONE, 0, 0, L({TU, "Una cassetta di legno con la scritta «Dispensa»."}) },
+    { VB(V_APRI), H_CASSETTA, NONE, 0, 0, L({TU, "Solo lische di pesce e una ricevuta: «Capitan Brodo, 1 pollo. Da pagare.»"}) },
+    { VB(V_RACCOGLI), H_CASSETTA, NONE, 0, 0, L({TU, "Puzza troppo di lische. Resta qui."}) },
+    { VB(V_GUARDA), H_INGRESSO, NONE, 0, 0, L({TU, "L'ingresso della grotta. Dentro è buio come la stiva di un galeone."}) },
+    { VB(V_VAI) | VB(V_APRI), H_INGRESSO, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_enter_cave },
+    { VB(V_GUARDA), H_RUSCELLO, NONE, 0, 0, L({TU, "Un ruscello caldo che esce dalla grotta. Profuma di sedano."}) },
+    { VB(V_RACCOGLI), H_RUSCELLO, NONE, 0, 0, L({TU, "Scotta! E poi non ho una tazza."}) },
+    { VB(V_GUARDA), H_ROCCE, NONE, 0, 0, L({TU, "Rocce scure e appuntite. Non è un posto per picnic."}) },
+    { VB(V_GUARDA), H_SENTIERO_G, NONE, 0, 0, L({TU, "Il sentiero che torna verso il resto dell'isola."}) },
 
     /* ---- grotta, interno ---- */
-    { VB(V_GUARDA), H_TESCHIO, NONE, 0, 0, { {TU, "Un teschio. Sorride, ma non so di cosa."} } },
-    { VB(V_RACCOGLI), H_TESCHIO, NONE, 0, 0, { {TU, "Scusa, amico. Ti porto in un posto migliore: una collezione."} }, SET(F_SKULL_TAKEN), ADD(IT_TESCHIO) },
-    { VB(V_GUARDA), H_FORZIERE, NONE, IF(F_CHEST2_OPEN), 0, { {TU, "Il forziere di Capitan Brodo. Dentro c'è solo il quaderno dei proverbi."} } },
-    { VB(V_GUARDA), H_FORZIERE, NONE, 0, 0, { {TU, "Un forziere con le iniziali «C.B.». Capitan Brodo. O Cotoletta Bollita."} } },
-    { VB(V_APRI), H_FORZIERE, NONE, IF(F_CHEST2_OPEN), 0, { {TU, "I proverbi li so già a memoria. Più o meno."} } },
-    { VB(V_APRI), H_FORZIERE, NONE, 0, 0, {
-        {TU, "Dentro c'è un quaderno: «I proverbi invincibili di Capitan Brodo»."},
+    { VB(V_GUARDA), H_TESCHIO, NONE, 0, 0, L({TU, "Un teschio. Sorride, ma non so di cosa."}) },
+    { VB(V_RACCOGLI), H_TESCHIO, NONE, 0, 0, L({TU, "Scusa, amico. Ti porto in un posto migliore: una collezione."}), SET(F_SKULL_TAKEN), ADD(IT_TESCHIO) },
+    { VB(V_GUARDA), H_FORZIERE, NONE, IF(F_CHEST2_OPEN), 0, L({TU, "Il forziere di Capitan Brodo. Dentro c'è solo il quaderno dei proverbi."}) },
+    { VB(V_GUARDA), H_FORZIERE, NONE, 0, 0, L({TU, "Un forziere con le iniziali «C.B.». Capitan Brodo. O Cotoletta Bollita."}) },
+    { VB(V_APRI), H_FORZIERE, NONE, IF(F_CHEST2_OPEN), 0, L({TU, "I proverbi li so già a memoria. Più o meno."}) },
+    { VB(V_APRI), H_FORZIERE, NONE, 0, 0, L({TU, "Dentro c'è un quaderno: «I proverbi invincibili di Capitan Brodo»."},
         {TU, "«Chi dorme in coffa... si sveglia in mare.» «Rosso di sera... grog a volontà.»"},
-        {TU, "«Can che abbaia... non sale a bordo.» Me li imparo a memoria. Non si sa mai."} }, SET(F_CHEST2_OPEN) },
-    { VB(V_CHIUDI), H_FORZIERE, NONE, 0, 0, { {TU, "Lo lascio com'è: Brodo potrebbe notarlo. Ah no, è un fantasma distratto."} } },
-    { SPOSTA | VB(V_RACCOGLI), H_FORZIERE, NONE, 0, 0, { {TU, "È incastrato tra le rocce. E pesa come un pentolone."} } },
-    { VB(V_GUARDA), H_CASCATA, NONE, 0, 0, { {TU, "Una cascata di brodo caldo. Ecco da dove viene l'odore."} } },
-    { VB(V_GUARDA), H_POZZA, NONE, 0, 0, { {TU, "Brodo. Brodo ovunque. Manca solo il pollo... e credo che qualcuno ci stia pensando."} } },
-    { VB(V_RACCOGLI), H_POZZA, NONE, 0, 0, { {TU, "Scotta! E poi non ho un cucchiaio abbastanza grande."} } },
-    { VB(V_GUARDA), H_STALATTITI, NONE, 0, 0, { {TU, "Stalattiti. O stalagmiti? Quelle che scendono. Credo."} } },
-    { VB(V_GUARDA), H_USCITA_G, NONE, 0, 0, { {TU, "L'uscita della grotta."} } },
+        {TU, "«Can che abbaia... non sale a bordo.» Li imparo a memoria. Non si sa mai."}), SET(F_CHEST2_OPEN) },
+    { VB(V_CHIUDI), H_FORZIERE, NONE, 0, 0, L({TU, "Lo lascio com'è: Brodo potrebbe notarlo. Ah no, è un fantasma distratto."}) },
+    { SPOSTA | VB(V_RACCOGLI), H_FORZIERE, NONE, 0, 0, L({TU, "È incastrato tra le rocce. E pesa come un pentolone."}) },
+    { VB(V_GUARDA), H_CASCATA, NONE, 0, 0, L({TU, "Una cascata di brodo caldo. Ecco da dove viene l'odore."}) },
+    { VB(V_GUARDA), H_POZZA, NONE, 0, 0, L({TU, "Brodo. Brodo ovunque. Manca solo il pollo... e credo che qualcuno ci stia pensando."}) },
+    { VB(V_RACCOGLI), H_POZZA, NONE, 0, 0, L({TU, "Scotta! E poi non ho un cucchiaio abbastanza grande."}) },
+    { VB(V_GUARDA), H_STALATTITI, NONE, 0, 0, L({TU, "Stalattiti. O stalagmiti? Quelle che scendono. Credo."}) },
+    { VB(V_GUARDA), H_USCITA_G, NONE, 0, 0, L({TU, "L'uscita della grotta."}) },
 
     /* ---- nave fantasma ---- */
-    { VB(V_GUARDA), H_NAVE_E, NONE, 0, 0, { {TU, "La Minestrina, la nave di Capitan Brodo. Trasparente come un brodo ben sgrassato."} } },
-    { VB(V_VAI) | VB(V_USA) | VB(V_APRI), H_NAVE_E, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_board },
-    { VB(V_GUARDA), H_BARCA_N, NONE, 0, 0, { {TU, "La barca di Ossobuco. Rema senza muscoli: è un mistero della scienza."} } },
-    { VB(V_VAI) | VB(V_USA), H_BARCA_N, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_back_to_cave },
-    { VB(V_PARLA), H_BARCA_N, NONE, 0, 0, { {TU, "Ossobuco, tutto bene?"}, {SP_OSSOBUCO, "Mai stato più morto."} } },
-    { VB(V_GUARDA), H_LUNA_N, NONE, 0, 0, { {TU, "La luna. Anche lei sembra un po' trasparente, stanotte."} } },
-    { VB(V_GUARDA), H_MARE_N, NONE, 0, 0, { {TU, "Il mare di notte. Nero e pieno di cose che non voglio conoscere."} } },
+    { VB(V_GUARDA), H_NAVE_E, NONE, 0, 0, L({TU, "La Minestrina, la nave di Capitan Brodo. Trasparente come un brodo ben sgrassato."}) },
+    { VB(V_VAI) | VB(V_USA) | VB(V_APRI), H_NAVE_E, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_board },
+    { VB(V_GUARDA), H_BARCA_N, NONE, 0, 0, L({TU, "La barca di Ossobuco. Rema senza muscoli: è un mistero della scienza."}) },
+    { VB(V_VAI) | VB(V_USA), H_BARCA_N, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_back_to_cave },
+    { VB(V_PARLA), H_BARCA_N, NONE, 0, 0, L({TU, "Ossobuco, tutto bene?"}, {SP_OSSOBUCO, "Mai stato più morto."}) },
+    { VB(V_GUARDA), H_LUNA_N, NONE, 0, 0, L({TU, "La luna. Anche lei sembra un po' trasparente, stanotte."}) },
+    { VB(V_GUARDA), H_MARE_N, NONE, 0, 0, L({TU, "Il mare di notte. Nero e pieno di cose che non voglio conoscere."}) },
 
-    { VB(V_GUARDA), H_BRODO, NONE, 0, 0, { {TU, "Capitan Brodo. Uno scheletro con il tricorno, seduto a tavola da cent'anni."},
-                                           {TU, "Aspetta la cena. Ho paura di sapere quale."} } },
-    { VB(V_PARLA),  H_BRODO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_brodo },
-    { VB(V_DAI), H_BRODO, ANY_ITEM, 0, 0, { {SP_BRODO, "Non mi serve niente. A parte un pollo. Un pollo grosso. Uno che fa il Custode."} } },
-    { TOCCA, H_BRODO, NONE, 0, 0, { {SP_BRODO, "Giù le mani! Un pirata si sfida con la lingua, non con le mani."} } },
-    { VB(V_GUARDA), H_CANDELE, NONE, 0, 0, { {TU, "Candele accese. Chi le accende, su una nave di fantasmi?"} } },
-    { VB(V_RACCOGLI), H_CANDELE, NONE, 0, 0, { {SP_BRODO, "Lascia stare le mie candele. È una cena romantica: io e la pentola."} } },
-    { VB(V_GUARDA), H_LANTERNA_N, NONE, 0, 0, { {TU, "Una lanterna appesa. Dondola anche quando la nave sta ferma."} } },
-    { VB(V_GUARDA), H_CATENA, NONE, 0, 0, { {TU, "La catena dell'àncora."} } },
-    { SPOSTA, H_CATENA, NONE, 0, 0, { {TU, "È la catena dell'àncora. Prima devo occuparmi del capitano."} } },
-    { VB(V_GUARDA), H_TIMONE, NONE, 0, 0, { {TU, "Il timone della Minestrina. Ancora un po' e sarà mio."} } },
-    { SPOSTA | VB(V_USA), H_TIMONE, NONE, 0, 0, { {SP_BRODO, "Il timone è del capitano. E il capitano sono io. Per ora."} } },
-    { VB(V_GUARDA), H_OBLO, NONE, 0, 0, { {TU, "Fuori c'è il mare. Dentro, il brodo."} } },
-    { VB(V_GUARDA), H_TAVOLA, NONE, 0, 0, { {TU, "Una tavola apparecchiata per uno: tovagliolo, cucchiaio e una pentola vuota."} } },
-    { VB(V_GUARDA), H_USCITA_N, NONE, 0, 0, { {TU, "La scaletta che riporta alla barca di Ossobuco."} } },
-    { VB(V_VAI) | VB(V_USA), H_USCITA_N, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_leave_ship },
+    { VB(V_GUARDA), H_BRODO, NONE, 0, 0, L({TU, "Capitan Brodo. Uno scheletro con il tricorno, seduto a tavola da cent'anni."},
+                                           {TU, "Aspetta la cena. Ho paura di sapere quale."}) },
+    { VB(V_PARLA),  H_BRODO, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_talk_brodo },
+    { VB(V_DAI), H_BRODO, ANY_ITEM, 0, 0, L({SP_BRODO, "Non mi serve niente. A parte un pollo. Un pollo grosso. Uno che fa il Custode."}) },
+    { TOCCA, H_BRODO, NONE, 0, 0, L({SP_BRODO, "Giù le mani! Un pirata si sfida con la lingua, non con le mani."}) },
+    { VB(V_GUARDA), H_CANDELE, NONE, 0, 0, L({TU, "Candele accese. Chi le accende, su una nave di fantasmi?"}) },
+    { VB(V_RACCOGLI), H_CANDELE, NONE, 0, 0, L({SP_BRODO, "Lascia stare le mie candele. È una cena romantica: io e la pentola."}) },
+    { VB(V_GUARDA), H_LANTERNA_N, NONE, 0, 0, L({TU, "Una lanterna appesa. Dondola anche quando la nave sta ferma."}) },
+    { VB(V_GUARDA), H_CATENA, NONE, 0, 0, L({TU, "La catena dell'àncora."}) },
+    { SPOSTA, H_CATENA, NONE, 0, 0, L({TU, "È la catena dell'àncora. Prima devo occuparmi del capitano."}) },
+    { VB(V_GUARDA), H_TIMONE, NONE, 0, 0, L({TU, "Il timone della Minestrina. Ancora un po' e sarà mio."}) },
+    { SPOSTA | VB(V_USA), H_TIMONE, NONE, 0, 0, L({SP_BRODO, "Il timone è del capitano. E il capitano sono io. Per ora."}) },
+    { VB(V_GUARDA), H_OBLO, NONE, 0, 0, L({TU, "Fuori c'è il mare. Dentro, il brodo."}) },
+    { VB(V_GUARDA), H_TAVOLA, NONE, 0, 0, L({TU, "Una tavola apparecchiata per uno: tovagliolo, cucchiaio e una pentola vuota."}) },
+    { VB(V_GUARDA), H_USCITA_N, NONE, 0, 0, L({TU, "La scaletta che riporta alla barca di Ossobuco."}) },
+    { VB(V_VAI) | VB(V_USA), H_USCITA_N, NONE, 0, 0, L({0, 0}), 0, 0, 0, fn_leave_ship },
 
     /* ---- sentieri (uscite verso la mappa) ---- */
-    { VB(V_GUARDA), H_SENTIERO_D, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
-    { VB(V_GUARDA), H_SENTIERO_B, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
-    { VB(V_GUARDA), H_SENTIERO_N, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
-    { VB(V_VAI), H_SENTIERO_D, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
-    { VB(V_VAI), H_SENTIERO_B, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
-    { VB(V_VAI), H_SENTIERO_N, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
+    { VB(V_GUARDA), H_SENTIERO_D, NONE, 0, 0, L({TU, "Un sentiero che porta al resto dell'isola."}) },
+    { VB(V_GUARDA), H_SENTIERO_B, NONE, 0, 0, L({TU, "Un sentiero che porta al resto dell'isola."}) },
+    { VB(V_GUARDA), H_SENTIERO_N, NONE, 0, 0, L({TU, "Un sentiero che porta al resto dell'isola."}) },
 };
 static const int rule_count = sizeof(rules) / sizeof(rules[0]);
 
@@ -1005,7 +1020,7 @@ int script_action(int verb, int o1, int o2)
         if (r->rem) remove_item(r->rem - 1);
         if (r->add) add_item(r->add - 1);
         if (r->set) set_flag(r->set - 1);
-        for (k = 0; k < 4 && r->lines[k].text; k++)
+        for (k = 0; r->lines[k].text; k++)
             say(r->lines[k].sp, r->lines[k].text);
         return 1;
     }
@@ -1138,13 +1153,15 @@ void dialog_choose(int npc, int id)
             break;
         case D_PIRATA:
             set_flag(F_KNOWS_CUSTODE);
+            set_flag(F_HEARD_BRODO);
             say(SP_HERO, "Voglio diventare un pirata!");
             say(SP_OSTE, "Tutti vogliono diventare pirati. Ma qui serve la benedizione del Custode di Puerto Polli.");
             say(SP_OSTE, "Lo trovi alle Rovine. Porta rispetto, e non nominare mai il brodo.");
             break;
         case D_BRODO:
             say(SP_HERO, "Chi è Capitan Brodo?");
-            say(SP_OSTE, "Shh! Ti avevo detto di non nominarlo!");
+            say(SP_OSTE, flag(F_HEARD_BRODO) ? "Shh! Ti avevo detto di non nominarlo!"
+                                             : "Shh! Quel nome qui dentro non si pronuncia!");
             say(SP_OSTE, "È un pirata fantasma. Da cent'anni vuole fare il brodo con il Custode, "
                          "e la sua nave si nasconde in una grotta che non sta su nessuna mappa.");
             say(SP_OSTE, "Su nessuna mappa normale, intendo. Il guardiano del faro, però, "
@@ -1178,7 +1195,9 @@ void dialog_choose(int npc, int id)
             set_flag(F_KNOWS_CUSTODE);
             say(SP_HERO, "Conosci il Custode?");
             say(SP_BARBA, "Il pollone delle Rovine? Vuole sempre le stesse cose: cappello, piuma e il Codice dei Pirati.");
-            say(SP_BARBA, "Il Codice ce l'avevo... l'ho chiuso nella cassa sulla spiaggia, insieme al mio calamaro portafortuna.");
+            say(SP_BARBA, flag(F_CRATE_OPEN)
+                          ? "Il Codice ce l'avevo nella cassa sulla spiaggia... ma quella l'hai già svuotata tu, mozzo."
+                          : "Il Codice ce l'avevo... l'ho chiuso nella cassa sulla spiaggia, insieme al mio calamaro portafortuna.");
             say(SP_HERO, "E la chiave?");
             say(SP_BARBA, "Ce l'ho io. Ma parlare mi mette sete. Tanta sete.");
             break;
@@ -1250,7 +1269,9 @@ void dialog_choose(int npc, int id)
             say(SP_HERO, duel_end[duel - 1][a]);
             if (a != 1) {
                 duel = 0;
-                say(SP_BRODO, "Ah ah ah! Sbagliato! Quella è roba da nonne di terraferma!");
+                set_flag(F_LOST_DUEL);
+                say(SP_BRODO, a == 0 ? "Ah ah ah! Sbagliato! Quella è roba da nonne di terraferma!"
+                                     : "Ah ah ah! Sbagliato! Che razza di proverbio sarebbe?");
                 if (!flag(F_CHEST2_OPEN))
                     say(SP_HERO, "(Devo scoprire come finiscono i suoi proverbi. Li avrà scritti da qualche parte.)");
                 else
@@ -1371,7 +1392,8 @@ void dialog_greeting(int npc)
             say(SP_HERO, "Non ci provare! Il Custode è... beh, è un pollo. Ma è il NOSTRO pollo.");
             say(SP_BRODO, "Vuoi fermarmi? Allora sfidami. A duello di proverbi! Nessuno mi ha mai battuto.");
         } else {
-            say(SP_BRODO, "Sei tornato a perdere ancora?");
+            say(SP_BRODO, flag(F_LOST_DUEL) ? "Sei tornato a perdere ancora?"
+                                            : "Sei tornato. La pentola ti aspetta.");
         }
         break;
     case SP_CUSTODE:
@@ -1380,7 +1402,8 @@ void dialog_greeting(int npc)
             say(SP_HERO, "Ehm... ciao, pollo.");
             say(SP_CUSTODE, "Non sono un pollo qualunque... Sono il Custode di Puerto Polli!");
         } else {
-            say(SP_CUSTODE, "Sei tornato, aspirante pirata.");
+            say(SP_CUSTODE, flag(F_GAME_WON) ? "Ah, il mio pirata preferito. Cosa ti serve?"
+                                             : "Sei tornato, aspirante pirata.");
         }
         break;
     }
@@ -1414,8 +1437,8 @@ void script_map_place(int idx)
         return;
     }
     if (p->room < 0) {
-        say(SP_NARRATORE, "Il faro è chiuso. Sulla porta c'è un cartello: \"Torno subito. Il guardiano\".");
-        say(SP_NARRATORE, "Il cartello sembra lì da vent'anni.");
+        say(SP_NARRATORE, "Il faro è chiuso. Sulla porta c'è un biglietto: \"Torno subito. Il guardiano\".");
+        say(SP_NARRATORE, "Il biglietto sembra lì da vent'anni.");
         return;
     }
     go_room(p->room);

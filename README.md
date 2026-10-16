@@ -76,7 +76,7 @@ Senza verbo selezionato, il clic su un oggetto dell'inventario lo esamina
 
 **Parte III**
 
-11. **Guarda** la carta nautica: la Grotta del Brodo compare sulla mappa.
+11. **Guarda** la carta nautica nell'inventario: la Grotta del Brodo compare sulla mappa.
 12. Grotta: entra (serve la lanterna), **Raccogli** il teschio e **Apri** il
     forziere (i proverbi di Brodo).
 13. Fuori: **Dai** il teschio a Ossobuco, **Usa** la barca, poi sali sulla nave.
@@ -158,7 +158,8 @@ ridisegno parziale coincida con quello completo, e verifica: niente pixel
 scritti fuori dall'area di ritaglio, salvataggi alterati/troncati rifiutati e
 vecchi salvataggi caricati, testi lunghi divisi senza perdite, punti di arrivo
 e ingressi dentro le zone calpestabili, prospettiva senza «pulsazioni», coda
-dei messaggi mai piena.
+dei messaggi mai piena, disegno veloce del protagonista identico a quello
+lento, e alcuni bug già corretti (perché non tornino).
 
 ## Struttura del codice
 
@@ -180,14 +181,19 @@ dei messaggi mai piena.
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
 | `tools/scenes2.py` | scene delle Parti II e III dal secondo mockup: rimozione di box e protagonista, oggetti raccoglibili come «toppe», icone nuove, contrasto locale (CLAHE) prima del dithering |
 | `tools/seams.py` | ridimensionamento «sensibile al contenuto» (seam carving): porta i mockup 4:3 al 2:1 dello schermo allargando cielo, mare e roccia senza deformare faro e personaggi |
-| `tools/hero.py` | sprite del protagonista: testa, busto e braccia ricavati dal protagonista del mockup (sagoma tracciata a mano, ridotta e convertita in retini fissi), gambe e stivali disegnati per la camminata; 4 misure × 9 fotogrammi più il cappello come strato |
+| `tools/hero.py` | sprite del protagonista: testa, busto e braccia ricavati dal protagonista del mockup (sagoma tracciata a mano, ridotta e convertita in retini fissi), gambe e stivali disegnati per la camminata; 4 misure × 9 fotogrammi più il cappello come strato, salvati «a righe condivise» (ogni riga diversa una volta sola: 28 KB invece di 64) |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.
 Per restare veloce su un 68000 a 8 MHz ridisegna ogni fotogramma solo le zone
 cambiate (protagonista, box dei dialoghi, zone animate; nel pannello solo il
 verbo o la casella dell'inventario che cambia) e le porta a
-video con più `CopyBits` piccoli invece di uno grande. Le animazioni
+video con più `CopyBits` piccoli invece di uno grande. Il protagonista si
+disegna una riga intera alla volta (senza controlli per ogni byte), le onde
+ricalcolano solo le righe che cambiano davvero, la lente del faro è
+calcolata durante il gioco invece di essere salvata, e sotto le finestre
+(pausa, salvataggio) le animazioni si fermano. Le parti che non incidono
+sulla velocità (storia, finestre, salvataggi) sono compilate con `-Os`. Le animazioni
 lavorano su una copia dello sfondo, così il protagonista ci passa davanti
 senza sfarfallii; le zone animate sono elencate in `src/script.c`
 (tabella `anims`), dove si possono aggiungere o regolare.

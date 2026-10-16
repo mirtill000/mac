@@ -17,7 +17,7 @@ enum { PATCH_LANTERNA, PATCH_CARTA, PATCH_TESCHIO, PATCH_COUNT };
 #define ICON_BIG 44
 #define HERO_SIZES 4
 #define HERO_FRAMES 9          /* fermo, parla, 6 camminata, occhi chiusi */
-#define FLICKER_COUNT 3          /* 0 lanterna Taberna, 1 lente del faro, 2 candele */
+#define FLICKER_COUNT 2          /* 0 lanterna della Taberna, 1 candele della nave */
 #define STAR_COUNT 32           /* coordinate: x/2, y */
 #define GULL_W 16
 #define GULL_H 5
@@ -31,9 +31,17 @@ extern const PackedBitmap asset_bg[BG_COUNT];
 extern const Bitmap asset_icon_small[ITEM_ICON_COUNT];
 extern const Bitmap asset_icon_big[ITEM_ICON_COUNT];
 extern const unsigned char *const asset_icon_mask; /* ICON_SMALL x ICON_SMALL ciascuna */
-extern const Sprite *const asset_hero[HERO_SIZES];
+/* protagonista a righe condivise: la riga y del fotogramma f sta in
+   pool + rows[f * h + y]; il cappello (2 varianti, hat_h righe) segue i
+   fotogrammi: rows[HERO_FRAMES * h + v * hat_h + y]. Ogni riga del pool e'
+   rowBytes byte di disegno seguiti da rowBytes byte di maschera. */
+typedef struct {
+    short w, h, rowBytes, hat_h;
+    const unsigned char *pool;
+    const unsigned short *rows;
+} HeroSprite;
+extern const HeroSprite asset_hero[HERO_SIZES];
 extern const short asset_hero_height[HERO_SIZES];
-extern const Sprite *const asset_hero_hat[HERO_SIZES];      /* [0] fermo, [1] testa abbassata */
 extern const short asset_hero_full_w[HERO_SIZES];            /* larghezza prima del ritaglio */
 extern const short asset_hero_ox[HERO_SIZES];                /* x del ritaglio nel disegno pieno */
 extern const unsigned char asset_hero_head_down[HERO_FRAMES];

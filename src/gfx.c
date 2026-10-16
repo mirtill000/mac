@@ -288,26 +288,75 @@ static void init_rev(void)
     rev_ready = 1;
 }
 
-void gfx_masked_mirror(const unsigned char *bits, const unsigned char *mask,
-                       int w, int h, int rb, int x, int y)
+/* Una riga di sprite interamente dentro il ritaglio (e con il ritaglio
+   allineato al byte): niente controlli per ogni byte, lo scorrimento di
+   sh bit si porta avanti da un byte al successivo. E' il ciclo che conta
+   di piu' su un 68000: disegna il protagonista a ogni passo. */
+static void row_fast(unsigned char *d, const unsigned char *bs, const unsigned char *ms,
+                     int rb, int sh, int mirror)
 {
-    int yy, i;
+    unsigned char t = cur_tint, m, b;
+    int i;
+/* un byte del disegno: FETCH legge (m, b) dal byte i dello sprite */
+#define ROW_LOOP(FETCH)                                                       \
+    if (!sh) {                                                                \
+        for (i = 0; i < rb; i++) {                                            \
+            FETCH;                                                            \
+            if (m) d[i] = (unsigned char)((d[i] & ~m) | ((b | t) & m));       \
+        }                                                                     \
+    } else {                                                                  \
+        int r = 8 - sh;                                                       \
+        unsigned char pm = 0, pb = 0, mm;                                     \
+        for (i = 0; i < rb; i++) {                                            \
+            FETCH;                                                            \
+            mm = (unsigned char)((pm << r) | (m >> sh));                      \
+            if (mm) d[i] = (unsigned char)((d[i] & ~mm) |                     \
+                           ((((pb << r) | (b >> sh)) | t) & mm));             \
+            pm = m;                                                           \
+            pb = b;                                                           \
+        }                                                                     \
+        mm = (unsigned char)(pm << r);                                        \
+        if (mm) d[rb] = (unsigned char)((d[rb] & ~mm) | (((pb << r) | t) & mm)); \
+    }
+    if (mirror) {
+        bs += rb - 1;
+        ms += rb - 1;
+        ROW_LOOP((m = rev_tab[*ms--], b = rev_tab[*bs--]))
+    } else {
+        ROW_LOOP((m = *ms++, b = *bs++))
+    }
+#undef ROW_LOOP
+}
+
+void gfx_sprite_rows(const unsigned char *pool, const unsigned short *rows,
+                     int w, int h, int rb, int x, int y, int mirror)
+{
+    int yy, i, fast;
     if (!rev_ready) init_rev();
     if (x >= clip.x1 || x + w <= clip.x0 || y >= clip.y1 || y + h <= clip.y0) return;
     gfx_dirty(x, y, x + w, y + h);
+    /* tutta la larghezza (compreso il byte di scorrimento) dentro il ritaglio */
+    fast = x >= 0 && (x >> 3) >= clip_b0 && (x >> 3) + rb + ((x & 7) ? 1 : 0) - 1 <= clip_b1 &&
+           clip_lm == 0xFF && clip_rm == 0xFF;
     for (yy = 0; yy < h; yy++) {
         int dy = y + yy;
+        const unsigned char *bs, *ms;
         unsigned char *row;
-        const unsigned char *bs = bits + yy * rb, *ms = mask + yy * rb;
         if (dy < clip.y0 || dy >= clip.y1) continue;
+        bs = pool + rows[yy];
+        ms = bs + rb;
         row = gfx_fb + dy * FB_RB;
         cur_tint = tint_pat ? tint_pat[dy & 7] : 0;
+        if (fast) {
+            row_fast(row + (x >> 3), bs, ms, rb, x & 7, mirror);
+            continue;
+        }
         for (i = 0; i < rb; i++) {
-            int src = rb - 1 - i;
+            int src = mirror ? rb - 1 - i : i;
+            unsigned char m = mirror ? rev_tab[ms[src]] : ms[src];
             int px = x + (i << 3);
-            unsigned char m = rev_tab[ms[src]];
             if (!m || px + 8 <= clip.x0 || px >= clip.x1) continue;
-            put8(row, px, rev_tab[bs[src]], m);
+            put8(row, px, mirror ? rev_tab[bs[src]] : bs[src], m);
         }
     }
     cur_tint = 0;

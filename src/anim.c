@@ -23,6 +23,9 @@ static int scene;
 static unsigned long tick;
 static unsigned long rnd = 12345;
 static const Anim *act[MAX_ANIMS];
+/* onde: spostamento attuale di ogni riga (127 = non ancora disegnata) */
+#define WAVE_ROWS 160
+static signed char wave_dx[MAX_ANIMS][WAVE_ROWS];
 static AnimState st[MAX_ANIMS];
 static int nact;
 
@@ -138,19 +141,31 @@ void anim_reset(int sc, const unsigned char *b, unsigned char *c)
         nact++;
     }
     for (i = 0; i < MAX_DIM; i++) dim_timer[i] = 0;
+    memset(wave_dx, 127, sizeof(wave_dx));
 }
 
-static int step_wave(const Anim *a, AnimState *s, GRect *r, int *any)
+/* Onde: ogni riga e' spostata di dx pixel secondo un seno. Da un passo al
+   successivo cambia solo una riga su otto circa: le altre restano come sono
+   (si ricorda lo spostamento di ogni riga) e non vanno ne' ricalcolate ne'
+   portate a video. */
+static int step_wave(const Anim *a, AnimState *s, int idx, GRect *r, int *any)
 {
-    int y, lambda = a->p2 > 0 ? a->p2 : 16;
+    int y, lambda = a->p2 > 0 ? a->p2 : 16, ylo = -1, yhi = -1;
+    signed char *last = wave_dx[idx];
     if (tick % (unsigned long)(a->p3 > 0 ? a->p3 : 3)) return 0;
     s->phase = (short)((s->phase + 1) & 63);
     for (y = a->y0; y < a->y1; y++) {
         int k = (s->phase * 2 + (y - a->y0) * 64 / lambda) & 63;
         int dx = (a->p1 * sin64[k] + (sin64[k] >= 0 ? 63 : -63)) / 127;
+        int i = y - a->y0;
+        if (i < WAVE_ROWS && last[i] == dx) continue;
+        if (i < WAVE_ROWS) last[i] = (signed char)dx;
         shift_row(y, a->x0 >> 3, a->x1 >> 3, dx);
+        if (ylo < 0) ylo = y;
+        yhi = y + 1;
     }
-    grow(r, any, a->x0, a->y0, a->x1, a->y1);
+    if (ylo < 0) return 0;
+    grow(r, any, a->x0, ylo, a->x1, yhi);
     return 1;
 }
 
@@ -288,6 +303,55 @@ static int step_flicker(const Anim *a, AnimState *s, GRect *r, int *any)
     return 1;
 }
 
+/* Lente del faro che gira: una fascia d'ombra scorre da sinistra a destra
+   dentro l'ellisse della lente (il rettangolo dell'animazione). Si lavora a
+   byte: ogni byte della fascia riceve un retino piu' o meno fitto secondo
+   la distanza dal centro dell'ombra. Niente fotogrammi salvati. */
+static const unsigned char beam_pat[3][4] = {
+    { 0x88, 0x00, 0x22, 0x00 },           /* 25% */
+    { 0xAA, 0x55, 0xAA, 0x55 },           /* 50% */
+    { 0xEE, 0xBB, 0xEE, 0xBB },           /* 75% */
+};
+
+static int step_beam(const Anim *a, AnimState *s, GRect *r, int *any)
+{
+    int cx = (a->x0 + a->x1) / 2, cy = (a->y0 + a->y1) / 2;
+    int rx = (a->x1 - a->x0) / 2, ry = (a->y1 - a->y0) / 2;
+    int n = a->p1 > 0 ? a->p1 : 10, span = 2 * rx + 36, bx, y;
+    int bx0 = a->x0 >> 3, nb = (a->x1 - a->x0) >> 3;
+    if (--s->timer > 0) return 0;
+    s->timer = (short)(a->p3 > 0 ? a->p3 : 3);
+    s->phase = (short)((s->phase + 1) % n);
+    bx = cx - rx - 18 + span * s->phase / n;
+    for (y = a->y0; y < a->y1; y++) {
+        unsigned char *d = cur + y * FB_RB + bx0;
+        const unsigned char *b = base + y * FB_RB + bx0;
+        long dy = y - cy;
+        int half, xl, xr, c;
+        memcpy(d, b, nb);
+        /* meta' larghezza dell'ellisse a questa riga */
+        {
+            long q = (long)rx * rx - (long)rx * rx * dy * dy / ((long)ry * ry);
+            if (q <= 0) continue;
+            for (half = 0; (long)(half + 1) * (half + 1) <= q; half++) ;
+        }
+        xl = cx - half;
+        xr = cx + half;
+        for (c = 0; c < nb; c++) {
+            int x = a->x0 + c * 8, dist = x + 4 - bx, lv;
+            unsigned char m = 0xFF;
+            if (dist < 0) dist = -dist;
+            lv = dist < 6 ? 2 : dist < 12 ? 1 : dist < 18 ? 0 : -1;
+            if (lv < 0 || x + 8 <= xl || x >= xr) continue;
+            if (x < xl) m &= (unsigned char)(0xFF >> (xl - x));
+            if (x + 8 > xr) m &= (unsigned char)(0xFF << (x + 8 - xr));
+            d[c] = (unsigned char)(b[c] | (beam_pat[lv][y & 3] & m));
+        }
+    }
+    grow(r, any, a->x0, a->y0, a->x1, a->y1);
+    return 1;
+}
+
 /* acqua che cade: le righe della zona scorrono verso il basso (a byte) */
 static int step_fall(const Anim *a, AnimState *s, GRect *r, int *any)
 {
@@ -394,7 +458,7 @@ int anim_step(int speaker, const GRect *avoid, GRect *out, int max)
         int any = 0;
         if (touches(a, avoid)) continue;     /* non disturbare il box dei dialoghi */
         switch (a->type) {
-        case AN_WAVE:    step_wave(a, &st[i], &r, &any); break;
+        case AN_WAVE:    step_wave(a, &st[i], i, &r, &any); break;
         case AN_SWAY:    step_sway(a, &st[i], &r, &any); break;
         case AN_BOB:     step_bob(a, &st[i], speaker, &r, &any); break;
         case AN_FLICKER: step_flicker(a, &st[i], &r, &any); break;
@@ -402,6 +466,7 @@ int anim_step(int speaker, const GRect *avoid, GRect *out, int max)
         case AN_FLYER:   step_flyer(a, &st[i], &r, &any); break;
         case AN_TALK:    step_talk(a, &st[i], speaker, &r, &any); break;
         case AN_FALL:    step_fall(a, &st[i], &r, &any); break;
+        case AN_BEAM:    step_beam(a, &st[i], &r, &any); break;
         }
         if (!any) continue;
         if (n < max) {
