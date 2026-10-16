@@ -14,7 +14,7 @@
 enum {
     AN_WAVE,      /* righe che ondeggiano (mare)            p1 ampiezza, p2 lunghezza d'onda, p3 lentezza */
     AN_SWAY,      /* oscillazione con perno in basso         p1 ampiezza, p2 periodo */
-    AN_BOB,       /* personaggio che respira / annuisce      p1 chi parla (-1), p2 periodo, p3 pixel */
+    AN_BOB,       /* personaggio che annuisce quando parla   p1 chi parla, p2 periodo di respiro (0 = mai), p3 pixel */
     AN_FLICKER,   /* lanterna che tremola */
     AN_TWINKLE,   /* stelle che brillano */
     AN_FLYER      /* gabbiano che attraversa il cielo        p1 velocita' */

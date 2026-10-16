@@ -414,27 +414,58 @@ def main():
         for i in range(8):
             f.write("  { %d, %d, %d, icons_big + %d },\n" % (ICON_BIG, ICON_BIG, rbb, i * rbb * ICON_BIG))
         f.write("};\n\n")
-        # sprite protagonista: per ogni misura e fotogramma bitmap nero + maschera
-        f.write("/* protagonista: %d misure x %d fotogrammi */\n" % (len(hero_sizes), nframes))
-        for si, (hh, frames) in enumerate(hero_sizes):
-            w, h = hero.size_for(hh)
-            rb = w // 8
-            fsz = rb * h
-            hdata = b""
+        # sprite protagonista: per ogni misura i fotogrammi senza cappello piu'
+        # il cappello come strato a parte; tutto ritagliato in larghezza ai
+        # soli byte usati (meno memoria e blit piu' veloci sul 68000)
+        f.write("/* protagonista: %d misure x %d fotogrammi + cappello */\n" % (len(hero_sizes), nframes))
+        crop_info = []
+        for hh, frames in hero_sizes:
+            full_w, h = hero.size_for(hh)
+            hats = hero.hat_layers(hh)
+            used = np.zeros(full_w, bool)
+            for fr in frames + hats:
+                used |= (fr != 0).any(axis=0)
+            xs = np.nonzero(used)[0]
+            bx0, bx1 = xs[0] // 8, xs[-1] // 8 + 1
+            w = (bx1 - bx0) * 8
+            rb = bx1 - bx0
+            crop_info.append((full_w, bx0 * 8))
+            data = b""
             for fr in frames:
-                b, m = hero.to_bits(fr)
-                hdata += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
-            c_array("hero_%d" % hh, hdata, f)
+                b, m = hero.to_bits(fr[:, bx0 * 8:bx1 * 8])
+                data += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
+            hat_off = len(data)
+            hat_rows = max(int(np.nonzero((hl != 0).any(axis=1))[0][-1]) + 1 for hl in hats)
+            for hl in hats:
+                b, m = hero.to_bits(hl[:hat_rows, bx0 * 8:bx1 * 8])
+                data += bits_to_bytes(b)[0].tobytes() + bits_to_bytes(m)[0].tobytes()
+            c_array("hero_%d" % hh, data, f)
+            fsz = rb * h
             f.write("static const Sprite hero_%d_frames[HERO_FRAMES] = {\n" % hh)
             for i in range(nframes):
                 f.write("  { %d, %d, %d, hero_%d + %d, hero_%d + %d },\n" %
                         (w, h, rb, hh, i * 2 * fsz, hh, i * 2 * fsz + fsz))
             f.write("};\n")
+            hsz = rb * hat_rows
+            f.write("static const Sprite hero_%d_hat[2] = {\n" % hh)
+            for i in range(2):
+                f.write("  { %d, %d, %d, hero_%d + %d, hero_%d + %d },\n" %
+                        (w, hat_rows, rb, hh, hat_off + i * 2 * hsz, hh, hat_off + i * 2 * hsz + hsz))
+            f.write("};\n")
         f.write("const Sprite *const asset_hero[HERO_SIZES] = {\n")
         for hh, _ in hero_sizes:
             f.write("  hero_%d_frames,\n" % hh)
-        f.write("};\nconst short asset_hero_height[HERO_SIZES] = { %s };\n\n" %
+        f.write("};\nconst Sprite *const asset_hero_hat[HERO_SIZES] = {\n")
+        for hh, _ in hero_sizes:
+            f.write("  hero_%d_hat,\n" % hh)
+        f.write("};\nconst short asset_hero_height[HERO_SIZES] = { %s };\n" %
                 ", ".join(str(hh) for hh, _ in hero_sizes))
+        f.write("const short asset_hero_full_w[HERO_SIZES] = { %s };\n" %
+                ", ".join(str(c[0]) for c in crop_info))
+        f.write("const short asset_hero_ox[HERO_SIZES] = { %s };\n" %
+                ", ".join(str(c[1]) for c in crop_info))
+        f.write("const unsigned char asset_hero_head_down[HERO_FRAMES] = { %s };\n\n" %
+                ", ".join(str(v) for v in hero.HEAD_DOWN))
 
         # gabbiano in volo (16 x 5, due fotogrammi)
         gdata = b"".join(bits_to_bytes(gb)[0].tobytes() for gb in hero.gull_bits())
@@ -484,8 +515,7 @@ enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT, BG_COUNT };
 #define ICON_SMALL %d
 #define ICON_BIG %d
 #define HERO_SIZES %d
-#define HERO_FRAMES %d          /* 9 senza cappello + 9 con il cappello */
-#define HERO_MAX_W %d
+#define HERO_FRAMES %d          /* fermo, parla, 6 camminata, occhi chiusi */
 #define LANTERN_X %d
 #define LANTERN_Y %d
 #define LANTERN_FRAMES %d
@@ -504,6 +534,10 @@ extern const Bitmap asset_icon_big[ITEM_ICON_COUNT];
 extern const unsigned char *const asset_icon_mask; /* ICON_SMALL x ICON_SMALL ciascuna */
 extern const Sprite *const asset_hero[HERO_SIZES];
 extern const short asset_hero_height[HERO_SIZES];
+extern const Sprite *const asset_hero_hat[HERO_SIZES];      /* [0] fermo, [1] testa abbassata */
+extern const short asset_hero_full_w[HERO_SIZES];            /* larghezza prima del ritaglio */
+extern const short asset_hero_ox[HERO_SIZES];                /* x del ritaglio nel disegno pieno */
+extern const unsigned char asset_hero_head_down[HERO_FRAMES];
 extern const unsigned char *const asset_gull;          /* 2 fotogrammi, 2 byte per riga */
 extern const Bitmap asset_lantern[LANTERN_FRAMES];
 extern const unsigned char asset_stars[STAR_COUNT][2];
@@ -511,7 +545,7 @@ extern const unsigned char *const asset_font[2];
 
 #endif
 """ % (ICON_SMALL, ICON_BIG, len(hero_sizes), nframes,
-       max(hero.size_for(hh)[0] for hh in hero.HEIGHTS), lx0, ly0, len(lantern), len(stars),
+       lx0, ly0, len(lantern), len(stars),
        FONT_W, FONT_H))
 
 

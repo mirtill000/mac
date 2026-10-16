@@ -94,38 +94,32 @@ const RoomDepth room_depth[ROOM_COUNT] = {
     { 206, 100, 236, 112 },    /* notte    */
 };
 
-/* Animazioni degli sfondi (vedi anim.h). x0 e x1 multipli di 8. */
+/* Animazioni degli sfondi (vedi anim.h). x0 e x1 multipli di 8.
+   Regola: al massimo due effetti continui per scena, cosi' l'occhio non si
+   disperde e il 68000 respira. I personaggi si muovono solo mentre parlano. */
 const Anim anims[] = {
     /* scena          tipo        x0   y0   x1   y1   p1          p2   p3 */
-    /* titolo: mare, veliero, gabbiano */
-    { SCENE_TITLE,  AN_WAVE,      0, 238, 512, 342, 2,          12,  3 },
-    { SCENE_TITLE,  AN_SWAY,     88, 200, 136, 240, 1,          80,  0 },
+    /* titolo: riflessi del mare ai lati del menu, un gabbiano ogni tanto */
+    { SCENE_TITLE,  AN_WAVE,      0, 250, 184, 342, 1,          12,  4 },
+    { SCENE_TITLE,  AN_WAVE,    328, 250, 512, 342, 1,          12,  4 },
     { SCENE_TITLE,  AN_FLYER,     0, 158, 512, 196, 2,           0,  0 },
 
-    /* molo: mare, veliero che dondola, gabbiano, pirati che respirano */
-    { ROOM_DOCK,    AN_WAVE,      0, 142,  80, 178, 1,          10,  3 },
-    { ROOM_DOCK,    AN_WAVE,    120, 128, 232, 182, 1,          10,  3 },
-    { ROOM_DOCK,    AN_SWAY,      0,  18,  88, 132, 2,          90,  0 },
-    { ROOM_DOCK,    AN_BOB,      80, 150, 120, 182, -1,         30,  1 },
-    { ROOM_DOCK,    AN_BOB,     424, 140, 496, 196, SP_BARBA,   40,  1 },
-    { ROOM_DOCK,    AN_BOB,     328, 126, 376, 178, SP_MOZZO,   35,  1 },
-    { ROOM_DOCK,    AN_FLYER,     0,   8, 512,  40, 3,           0,  0 },
+    /* molo: il mare; i pirati annuiscono quando parlano */
+    { ROOM_DOCK,    AN_WAVE,    120, 128, 232, 182, 1,          10,  4 },
+    { ROOM_DOCK,    AN_BOB,     424, 140, 496, 196, SP_BARBA,    0,  1 },
+    { ROOM_DOCK,    AN_BOB,     328, 126, 376, 178, SP_MOZZO,    0,  1 },
 
-    /* taberna: lanterna che tremola, oste */
+    /* taberna: la lanterna; l'oste annuisce quando parla */
     { ROOM_TAVERN,  AN_FLICKER, 168,  96, 232, 168, 0,           0,  0 },
-    { ROOM_TAVERN,  AN_BOB,     304, 112, 408, 194, SP_OSTE,    45,  1 },
+    { ROOM_TAVERN,  AN_BOB,     304, 112, 408, 194, SP_OSTE,     0,  1 },
 
-    /* spiaggia: mare, palme al vento, gabbiano */
-    { ROOM_BEACH,   AN_WAVE,    336, 122, 512, 164, 1,          12,  3 },
-    { ROOM_BEACH,   AN_SWAY,      0,   0, 152, 112, 2,         100,  0 },
+    /* spiaggia: il mare e un gabbiano di passaggio */
+    { ROOM_BEACH,   AN_WAVE,    336, 122, 512, 164, 1,          12,  4 },
     { ROOM_BEACH,   AN_FLYER,   152,  12, 512,  60, 2,           0,  0 },
 
-    /* rovine di notte: stelle, riflessi della luna, palma, il Custode */
+    /* rovine: le stelle; il Custode annuisce quando parla */
     { ROOM_NIGHT,   AN_TWINKLE,   0,   0, 344, 112, 0,           0,  0 },
-    { ROOM_NIGHT,   AN_WAVE,     80, 124, 312, 160, 1,           8,  4 },
-    { ROOM_NIGHT,   AN_SWAY,    424,   0, 512, 124, 2,         110,  0 },
-    { ROOM_NIGHT,   AN_SWAY,     16, 104,  80, 160, 1,          70,  0 },
-    { ROOM_NIGHT,   AN_BOB,     328,  88, 424, 178, SP_CUSTODE, 30,  1 },
+    { ROOM_NIGHT,   AN_BOB,     328,  88, 424, 178, SP_CUSTODE,  0,  1 },
 };
 const int anim_count = sizeof(anims) / sizeof(anims[0]);
 

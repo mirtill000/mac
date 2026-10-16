@@ -4,9 +4,9 @@
 
 Grafica 1-bit, risoluzione 512 × 342, interfaccia a nove verbi, inventario,
 dialoghi a scelta multipla, mappa dell'isola, salvataggi e tanto umorismo.
-Le scene sono animate: il mare ondeggia, palme e velieri dondolano al vento,
-i gabbiani attraversano il cielo, le stelle brillano, la lanterna della
-Taberna tremola e i personaggi respirano e annuiscono quando parlano.
+Le scene sono animate con discrezione (al massimo due effetti per scena):
+il mare ondeggia, un gabbiano attraversa il cielo, le stelle brillano, la
+lanterna della Taberna tremola e i personaggi annuiscono quando parlano.
 Il protagonista cambia dimensione con la profondità, proietta un'ombra a
 terra e ogni tanto sbatte le palpebre.
 La grafica nasce dai mockup in [`reference/mockup.png`](reference/mockup.png):
@@ -128,7 +128,7 @@ salvare schermate in formato PBM.
 | `src/sdl/main_sdl.c` | versione PC con SDL2 |
 | `src/test/main_test.c` | test automatico della soluzione |
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
-| `tools/hero.py` | sprite del protagonista: 4 misure (prospettiva) × 18 fotogrammi, con e senza cappello |
+| `tools/hero.py` | sprite del protagonista: 3 misure (prospettiva) × 9 fotogrammi, più il cappello come strato a parte |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.

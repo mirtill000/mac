@@ -173,6 +173,8 @@ static int step_bob(const Anim *a, AnimState *s, int speaker, GRect *r, int *any
     int talking = a->p1 >= 0 && a->p1 == speaker;
     if (talking) {
         want = (tick / 3) & 1;                       /* annuisce mentre parla */
+    } else if (a->p2 <= 0) {
+        want = 0;                                    /* fermo quando tace */
     } else {
         if (--s->timer > 0) return 0;
         want = !s->phase;                            /* respiro lento */

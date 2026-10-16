@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 SX = 1.45                      # allargamento orizzontale del disegno
-HEIGHTS = (88, 100, 112, 124)  # altezze generate (prospettiva)
+HEIGHTS = (92, 108, 124)       # altezze generate (prospettiva)
 
 T, K, Wt, LG, DG, MG = 0, 1, 2, 3, 4, 5
 
@@ -82,6 +82,26 @@ def _boot(d, x, y, fill, cuff):
     pts = [(-4, -8), (4, -8), (4, -1), (8, 0), (8, 3), (-4, 3)]
     d.polygon([(x + px, y + py) for px, py in pts], fill=fill, outline=K)
     d.line([(x - 4, y - 8), (x + 4, y - 8)], fill=cuff)
+
+
+def _draw_hat(d, oy):
+    """Cappello da pirata (tricorno)."""
+    d.polygon([(14, 9 + oy), (15, 1 + oy), (21, 0 + oy), (28, 1 + oy), (29, 9 + oy)], fill=K, outline=K)
+    d.polygon([(8, 7 + oy), (21, 11 + oy), (35, 7 + oy), (33, 12 + oy), (21, 14 + oy), (10, 12 + oy)],
+              fill=K, outline=K)
+    d.line([(10, 9 + oy), (21, 12 + oy), (33, 9 + oy)], fill=Wt)
+    d.rectangle((21, 4 + oy, 22, 5 + oy), fill=Wt)
+
+
+def hat_layers(h):
+    """Il cappello da solo, da disegnare sopra la testa: [fermo, testa abbassata di 1]."""
+    out = []
+    for oy in (0, 1):
+        w, hh = size_for(h)
+        im = Image.new("L", (w, hh), T)
+        _draw_hat(_Pen(ImageDraw.Draw(im), w, hh), oy)
+        out.append(np.array(im))
+    return out
 
 
 def _hand(d, x, y, r=2.2):
@@ -155,12 +175,7 @@ def frame(h, legs=(0, 0, 0, 0), arms=(0, 0), bob=0, mouth=False, hat=False, blin
         d.rectangle((26, 13 + oy, 26, 14 + oy), fill=K)
     d.line([(23, 10 + oy), (28, 9 + oy)], fill=K)                                      # sopracciglio
     if hat:
-        # cappello da pirata (tricorno)
-        d.polygon([(14, 8 + oy), (15, 0 + oy), (21, -1 + oy), (28, 0 + oy), (29, 8 + oy)], fill=K, outline=K)
-        d.polygon([(8, 6 + oy), (21, 10 + oy), (35, 6 + oy), (33, 11 + oy), (21, 13 + oy), (10, 11 + oy)],
-                  fill=K, outline=K)
-        d.line([(10, 8 + oy), (21, 11 + oy), (33, 8 + oy)], fill=Wt)
-        d.rectangle((21, 3 + oy, 22, 4 + oy), fill=Wt)
+        _draw_hat(d, oy)
     # braccio anteriore: manica della giacca e mano
     hx, hy, _, _ = _limb(d, 23, 32 + oy, arms[1], arms[1] * 0.6 + 6, 12, 11, 7, 6, DG)
     _hand(d, hx, hy)
@@ -180,15 +195,17 @@ STAND = dict(legs=(-4, -2, 5, 2), arms=(4, -4), bob=0)
 FRAMES_PER_HAT = 9       # fermo, parla, 6 camminata, occhi chiusi
 
 
-def all_frames(h):
-    """18 fotogrammi: 0 fermo, 1 parla, 2..7 cammina, 8 occhi chiusi;
-    +9 = con il cappello in testa."""
-    fr = []
-    for hat in (False, True):
-        fr += [frame(h, hat=hat, **STAND), frame(h, mouth=True, hat=hat, **STAND)]
-        fr += [frame(h, hat=hat, **w) for w in WALK]
-        fr += [frame(h, blink=True, hat=hat, **STAND)]
+def all_frames(h, hat=False):
+    """9 fotogrammi: 0 fermo, 1 parla, 2..7 cammina, 8 occhi chiusi.
+    Nel gioco il cappello e' uno strato a parte (hat_layers)."""
+    fr = [frame(h, hat=hat, **STAND), frame(h, mouth=True, hat=hat, **STAND)]
+    fr += [frame(h, hat=hat, **w) for w in WALK]
+    fr += [frame(h, blink=True, hat=hat, **STAND)]
     return fr
+
+
+# fotogrammi in cui la testa e' abbassata di 1 (per posare il cappello)
+HEAD_DOWN = [0, 0, 1, 0, 0, 1, 0, 0, 0]
 
 
 def to_bits(a):

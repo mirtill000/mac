@@ -74,6 +74,7 @@ static int map_hover = -1;
 /* rendering */
 static unsigned char bgbuf[FB_H * FB_RB];
 static int need_full = 1, need_rebuild = 1, panel_dirty = 1;
+static int sentence_dirty;      /* basta ridisegnare la riga della frase */
 /* elementi sopra lo sfondo nel fotogramma precedente */
 static GRect hero_prev, box_prev;
 static int hero_prev_valid, box_prev_valid;
@@ -332,15 +333,37 @@ static int msg_duration(const Msg *m)
     return 30 + len * per10[text_speed] / 10;
 }
 
+/* L'impaginazione del messaggio viene calcolata una volta sola e
+   riutilizzata finche' il messaggio resta a video. */
+static const char *wrap_text_of;
+static int wrap_speaker = -1, wrap_n, wrap_lens[MAX_LINES];
+static const char *wrap_starts[MAX_LINES];
+
 static GRect msg_box_rect(const Msg *m, int *nlines, const char *starts[], int lens[])
 {
     GRect r;
-    int has_name = m->speaker != SP_HERO && m->speaker != SP_NARRATORE;
-    *nlines = wrap_text(m->text, 66, starts, lens);
+    int i, has_name = m->speaker != SP_HERO && m->speaker != SP_NARRATORE;
+    if (m->text != wrap_text_of || m->speaker != wrap_speaker) {
+        wrap_text_of = m->text;
+        wrap_speaker = m->speaker;
+        wrap_n = wrap_text(m->text, 66, wrap_starts, wrap_lens);
+    }
+    *nlines = wrap_n;
+    for (i = 0; i < wrap_n; i++) { starts[i] = wrap_starts[i]; lens[i] = wrap_lens[i]; }
     r.x0 = 12; r.x1 = FB_W - 12;
     r.y0 = 6;
-    r.y1 = (short)(r.y0 + 10 + (has_name ? 15 : 0) + *nlines * FONT_H + 8);
+    r.y1 = (short)(r.y0 + 10 + (has_name ? 15 : 0) + wrap_n * FONT_H + 8);
     return r;
+}
+
+/* triangolino "continua" in basso a destra del box */
+static int tri_shown;
+
+static void draw_triangle(GRect r, int on)
+{
+    gfx_fill(r.x1 - 18, r.y1 - 18, FONT_W + 1, FONT_H - 4, PAT_BLACK);
+    if (on) gfx_glyph(r.x1 - 18, r.y1 - 18, GLYPH_TRIANGLE, FONT_REGULAR, COL_WHITE);
+    tri_shown = on;
 }
 
 static void draw_msg(void)
@@ -365,8 +388,7 @@ static void draw_msg(void)
     }
     for (i = 0; i < n; i++, y += FONT_H)
         text_n(r.x0 + 12, y, starts[i], lens[i], FONT_REGULAR, COL_WHITE);
-    if ((frame_count / 8) & 1)
-        gfx_glyph(r.x1 - 18, r.y1 - 18, GLYPH_TRIANGLE, FONT_REGULAR, COL_WHITE);
+    draw_triangle(r, (int)((frame_count / 8) & 1));
     gfx_dirty(r.x0, r.y0, r.x1, r.y1);
     box_prev = r;
     box_prev_valid = 1;
@@ -503,7 +525,7 @@ static void update_walk(void)
     dx = tx - G.hx;
     dy = ty - G.hy;
     {
-        static const signed char speed[HERO_SIZES] = {4, 5, 5, 6};
+        static const signed char speed[HERO_SIZES] = {4, 5, 6};
         int v = speed[hero_size()];
         sx = dx > v ? v : (dx < -v ? -v : dx);
     }
@@ -720,19 +742,26 @@ static void build_sentence(char *buf, int max)
     }
 }
 
-static void draw_panel(void)
+/* riga della frase ("Usa chiave con cassa") e pulsante Menu */
+static void draw_sentence(void)
 {
     char sentence[96];
-    int i;
-
-    gfx_fill(0, SENTENCE_Y, FB_W, FB_H - SENTENCE_Y, PAT_BLACK);
-
+    gfx_fill(0, SENTENCE_Y, FB_W, PANEL_Y - SENTENCE_Y, PAT_BLACK);
     build_sentence(sentence, sizeof(sentence));
     text_center(SENTENCE_Y + 1, sentence, FONT_REGULAR, COL_WHITE);
     /* pulsante Menu */
     gfx_frame(MENU_BTN_X, SENTENCE_Y + 1, 48, 13, COL_WHITE);
     gfx_text(MENU_BTN_X + 10, SENTENCE_Y, "Menu", FONT_REGULAR, COL_WHITE);
     if (hover_menu == 0) gfx_invert(MENU_BTN_X + 1, SENTENCE_Y + 2, 46, 11);
+    sentence_dirty = 0;
+}
+
+static void draw_panel(void)
+{
+    int i;
+
+    draw_sentence();
+    gfx_fill(0, PANEL_Y, FB_W, FB_H - PANEL_Y, PAT_BLACK);
 
     if (dlg_npc >= 0) {
         if (!msg_count) {
@@ -1075,19 +1104,22 @@ static int hero_size(void)
 
 static int hero_frame(void)
 {
-    int base = flag(F_HAT_WORN) ? 9 : 0;
     Msg *m = cur_msg();
-    if (walking) return base + 2 + (walk_anim % 6);
-    if (m && m->text && m->speaker == SP_HERO && ((frame_count / 3) & 1)) return base + 1;
-    if (blinking) return base + 8;
-    return base;
+    if (walking) return 2 + (walk_anim % 6);
+    if (m && m->text && m->speaker == SP_HERO && ((frame_count / 3) & 1)) return 1;
+    if (blinking) return 8;
+    return 0;
 }
 
+/* i fotogrammi sono ritagliati: si riposiziona il ritaglio dentro il
+   disegno pieno, centrato sui piedi (anche quando e' specchiato) */
 static GRect hero_rect(void)
 {
-    const Sprite *s = &asset_hero[hero_size()][0];
+    int sz = hero_size();
+    const Sprite *s = &asset_hero[sz][0];
+    int full = asset_hero_full_w[sz], ox = asset_hero_ox[sz];
     GRect r;
-    r.x0 = (short)(G.hx - s->w / 2);
+    r.x0 = (short)(G.hx - full / 2 + (G.dir < 0 ? full - ox - s->w : ox));
     r.y0 = (short)(G.hy - s->h + 1);
     r.x1 = (short)(r.x0 + s->w);
     r.y1 = (short)(G.hy + 4);                 /* comprende l'ombra a terra */
@@ -1097,14 +1129,14 @@ static GRect hero_rect(void)
 static long hero_key(void)
 {
     return ((long)hero_frame() << 24) ^ ((long)hero_size() << 20) ^ ((long)(G.dir < 0) << 19) ^
-           ((long)G.hx << 8) ^ G.hy;
+           ((long)flag(F_HAT_WORN) << 18) ^ ((long)G.hx << 8) ^ G.hy;
 }
 
 static long box_key(void)
 {
     Msg *m = cur_msg();
     if (!m || !m->text) return 0;
-    return 1 + ((long)msg_head << 1) + ((frame_count / 8) & 1) + ((long)msg_count << 8);
+    return 1 + ((long)msg_head << 1) + ((long)msg_count << 8);
 }
 
 static int overlap(GRect a, GRect b)
@@ -1114,9 +1146,9 @@ static int overlap(GRect a, GRect b)
 
 static void hero_draw(void)
 {
-    int f = hero_frame();
+    int f = hero_frame(), sz = hero_size();
     GRect r = hero_rect();
-    const Sprite *s = &asset_hero[hero_size()][f];
+    const Sprite *s = &asset_hero[sz][f];
     gfx_clip(0, 0, FB_W, SCENE_H);
     /* ombra sotto i piedi: lega il personaggio al pavimento */
     gfx_shadow(G.hx + (G.dir < 0 ? 1 : -1), G.hy + 1, s->h / 6, 2);
@@ -1124,6 +1156,14 @@ static void hero_draw(void)
         gfx_masked_mirror(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
     else
         gfx_masked(s->bits, s->mask, s->w, s->h, s->rowBytes, r.x0, r.y0);
+    if (flag(F_HAT_WORN)) {
+        /* il tricorno e' uno strato sopra la testa */
+        const Sprite *h = &asset_hero_hat[sz][asset_hero_head_down[f]];
+        if (G.dir < 0)
+            gfx_masked_mirror(h->bits, h->mask, h->w, h->h, h->rowBytes, r.x0, r.y0);
+        else
+            gfx_masked(h->bits, h->mask, h->w, h->h, h->rowBytes, r.x0, r.y0);
+    }
     gfx_noclip();
     hero_prev = r;
     hero_prev_valid = 1;
@@ -1172,6 +1212,9 @@ static void update_play_overlays(void)
         box_prev_valid = 0;
         draw_msg();
         box_prev_key = bk;
+    } else if (box_prev_valid && tri_shown != (int)((frame_count / 8) & 1)) {
+        /* lampeggio: si ridisegna solo il triangolino */
+        draw_triangle(box_prev, !tri_shown);
     }
 }
 
@@ -1214,7 +1257,11 @@ void game_render(void)
     } else {
         update_play_overlays();
         if (panel_dirty) { draw_panel(); panel_dirty = 0; }
+        else if (sentence_dirty) draw_sentence();
     }
+    if (!need_full && modal == MODAL_NONE && mode == MODE_MAP && cur_msg() && cur_msg()->text &&
+        box_prev_valid && tri_shown != (int)((frame_count / 8) & 1))
+        draw_triangle(box_prev, !tri_shown);          /* mappa: lampeggio del box */
     if (!need_full && modal == MODAL_NONE && (mode == MODE_TITLE || mode == MODE_END) && anim_nrects) {
         /* titolo e finale: si ricopiano solo le zone animate */
         int i, menu = 0;
@@ -1270,13 +1317,15 @@ void game_mouse(int x, int y)
         }
         ch = choice_at(x, y);
         mb = in_rect(x, y, MENU_BTN_X, SENTENCE_Y, 48, 14) ? 0 : -1;
-        if (obj != hover_obj || vb != hover_verb || ch != hover_choice || mb != hover_menu) {
-            hover_obj = obj;
-            hover_verb = vb;
-            hover_choice = ch;
-            hover_menu = mb;
-            panel_dirty = 1;
+        if (vb != hover_verb || ch != hover_choice) {
+            panel_dirty = 1;              /* evidenziazione di verbi o scelte */
+        } else if (obj != hover_obj || mb != hover_menu) {
+            sentence_dirty = 1;           /* cambia solo la frase */
         }
+        hover_obj = obj;
+        hover_verb = vb;
+        hover_choice = ch;
+        hover_menu = mb;
         break;
     }
     default:
@@ -1462,9 +1511,6 @@ void game_tick(void)
             next_msg();
         } else if (++msg_timer > msg_duration(m)) {
             next_msg();
-        } else if ((frame_count & 7) == 0) {
-            /* triangolo lampeggiante: ridisegno del box */
-            if (mode == MODE_MAP) need_full = 1;
         }
     }
     if (mode == MODE_PLAY && modal == MODAL_NONE) update_walk();
