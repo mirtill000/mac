@@ -112,17 +112,27 @@ static void draw_verb(int i)
     pc_verb[i] = verb_state(i);
 }
 
+/* Le caselle restano nere come il pannello: l'oggetto e' "ritagliato"
+   (la sua sagoma, con un filo chiaro attorno). Solo l'oggetto scelto per
+   "Usa ... con" / "Dai ... a" ha la casella bianca, cosi' si capisce
+   subito che e' selezionato. */
 static void draw_inv(int i)
 {
     int x = INV_X(i), y = INV_Y(i);
     gfx_fill(x, y, 56, 38, PAT_BLACK);
     gfx_frame(x, y, 56, 38, COL_WHITE);
     if (i < G.ninv) {
-        int it = G.inv[i];
-        gfx_fill(x + 2, y + 2, 52, 34, PAT_WHITE);
-        gfx_bitmap(&asset_icon_small[it], x + 12, y + 3);
-        if (it == IT_CAPPELLO && flag(F_HAT_WORN)) gfx_glyph(x + 45, y + 2, '*', FONT_BOLD, COL_BLACK);
-        if (it == sel_item) gfx_invert(x + 2, y + 2, 52, 34);
+        int it = G.inv[i], sel = it == sel_item;
+        const Bitmap *b = &asset_icon_small[it];
+        if (sel) {
+            gfx_fill(x + 2, y + 2, 52, 34, PAT_WHITE);
+            gfx_bitmap(b, x + 12, y + 3);
+        } else {
+            gfx_masked(b->bits, asset_icon_mask + it * b->rowBytes * b->h,
+                       b->w, b->h, b->rowBytes, x + 12, y + 3);
+        }
+        if (it == IT_CAPPELLO && flag(F_HAT_WORN))
+            gfx_glyph(x + 45, y + 2, '*', FONT_BOLD, sel ? COL_BLACK : COL_WHITE);
     }
     pc_inv[i] = inv_state(i);
 }
