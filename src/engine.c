@@ -18,6 +18,7 @@
 GameState G;
 
 int mode = MODE_TITLE;
+int chapter;
 int modal = MODAL_NONE;
 int modal_from_title;
 int quit_requested;
@@ -75,7 +76,11 @@ void rebuild_background(void)
     switch (mode) {
     case MODE_TITLE: gfx_unpack(&asset_bg[BG_TITLE], basebuf); scene = SCENE_TITLE; break;
     case MODE_MAP:   gfx_unpack(&asset_bg[BG_MAP], basebuf); break;
-    case MODE_END:   gfx_unpack(&asset_bg[BG_NIGHT], basebuf); scene = ROOM_NIGHT; break;
+    case MODE_END:
+        /* cartello della Parte II (il faro), della Parte III e finale (la nave) */
+        scene = chapter == 2 ? ROOM_FARO : ROOM_NAVE;
+        gfx_unpack(&asset_bg[room_background(scene)], basebuf);
+        break;
     default:
         gfx_unpack(&asset_bg[room_background(G.room)], basebuf);
         /* gli oggetti di scena vengono "stampati" nello sfondo */
@@ -131,12 +136,15 @@ int hero_frame(void)
 
 /* i fotogrammi sono ritagliati: si riposiziona il ritaglio dentro il
    disegno pieno, centrato sui piedi (anche quando e' specchiato) */
+int hero_hidden(void) { return room_depth[G.room].h_far == 0; }
+
 GRect hero_rect(void)
 {
     int sz = hero_size();
     const Sprite *s = &asset_hero[sz][0];
     int full = asset_hero_full_w[sz], ox = asset_hero_ox[sz];
     GRect r;
+    if (hero_hidden()) { r.x0 = r.y0 = r.x1 = r.y1 = 0; return r; }
     r.x0 = (short)(G.hx - full / 2 + (G.dir < 0 ? full - ox - s->w : ox));
     r.y0 = (short)(G.hy - s->h + 1);
     r.x1 = (short)(r.x0 + s->w);
@@ -167,6 +175,12 @@ void hero_draw(void)
     int f = hero_frame(), sz = hero_size();
     GRect r = hero_rect();
     const Sprite *s = &asset_hero[sz][f];
+    if (hero_hidden()) {                     /* gia' dipinto nella scena */
+        hero_prev = r;                       /* rettangolo vuoto */
+        hero_prev_valid = 0;
+        hero_prev_key = hero_key();
+        return;
+    }
     gfx_clip(0, 0, FB_W, SCENE_H);
     /* luce della stanza: negli ambienti bui il bianco si vela */
     if (room_depth[G.room].tint) gfx_set_tint(PAT_LTGRAY);
@@ -490,7 +504,8 @@ void game_click(int x, int y)
         return;
     }
     case MODE_END:
-        to_title();
+        if (chapter) go_room(chapter_room(chapter));
+        else to_title();
         return;
     case MODE_MAP:
         if (msg_count) { next_msg(); return; }
@@ -573,7 +588,11 @@ void game_key(int ch, int command)
     }
     if (modal != MODAL_NONE) return;
     if (mode == MODE_TITLE && ch == KEY_RETURN) { new_game(); return; }
-    if (mode == MODE_END) { to_title(); return; }
+    if (mode == MODE_END) {
+        if (chapter) go_room(chapter_room(chapter));
+        else to_title();
+        return;
+    }
     if ((ch == ' ' || ch == KEY_RETURN || ch == '.') && msg_count) { next_msg(); return; }
     if (mode == MODE_PLAY && (ch == KEY_TAB || ch == 'i' || ch == 'I') && !msg_count && dlg_npc < 0) {
         modal_from_title = 0;

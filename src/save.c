@@ -50,7 +50,7 @@ void serialize(unsigned char *d)
     put16(d + 8, G.hx);
     put16(d + 10, G.hy);
     memcpy(d + OFF_FLAGS, G.flags, FLAG_BYTES);
-    for (i = 0; i < IT_COUNT; i++) d[OFF_INV + i] = (unsigned char)G.inv[i];
+    for (i = 0; i < INV_MAX; i++) d[OFF_INV + i] = (unsigned char)G.inv[i];
     plat_datetime(&day, &mon, &year, &hour, &min);
     d[OFF_DATE] = (unsigned char)day;
     d[OFF_DATE + 1] = (unsigned char)mon;
@@ -65,7 +65,7 @@ void serialize(unsigned char *d)
 int save_info(const unsigned char *d, int len, SaveInfo *si)
 {
     if (len >= 64 && d[0] == 'P' && d[1] == 'P' && d[2] == 'S' && d[3] == '1') {
-        if (d[4] >= ROOM_COUNT || d[14] > IT_COUNT) return 0;
+        if (d[4] >= ROOM_COUNT || d[14] > INV_MAX) return 0;
         si->room = d[4];
         si->day = d[23]; si->month = d[24]; si->year = get16(d + 25);
         si->hour = d[27]; si->minute = d[28];
@@ -73,7 +73,7 @@ int save_info(const unsigned char *d, int len, SaveInfo *si)
     }
     if (len >= SAVE_LEN && d[0] == 'P' && d[1] == 'P' && d[2] == 'S' && d[3] == '2') {
         if ((get16(d + OFF_SUM) & 0xFFFF) != (int)fletcher16(d, OFF_SUM)) return 0;   /* file alterato */
-        if (d[4] > SAVE_VERSION || d[5] >= ROOM_COUNT || d[7] > IT_COUNT) return 0;
+        if (d[4] > SAVE_VERSION || d[5] >= ROOM_COUNT || d[7] > INV_MAX) return 0;
         si->room = d[5];
         si->day = d[OFF_DATE]; si->month = d[OFF_DATE + 1]; si->year = get16(d + OFF_DATE + 2);
         si->hour = d[OFF_DATE + 4]; si->minute = d[OFF_DATE + 5];
@@ -99,14 +99,14 @@ int deserialize(const unsigned char *d, int len)
         for (i = 0; i < 32; i++)
             if (f & (1UL << i)) G.flags[i >> 3] |= (unsigned char)(1 << (i & 7));
         G.ninv = d[14];
-        for (i = 0; i < IT_COUNT; i++) G.inv[i] = (signed char)d[15 + i];
+        for (i = 0; i < INV_MAX; i++) G.inv[i] = (signed char)d[15 + i];
     } else {
         G.dir = (signed char)d[6];
         G.ninv = d[7];
         G.hx = (short)get16(d + 8);
         G.hy = (short)get16(d + 10);
         memcpy(G.flags, d + OFF_FLAGS, FLAG_BYTES);
-        for (i = 0; i < IT_COUNT; i++) G.inv[i] = (signed char)d[OFF_INV + i];
+        for (i = 0; i < INV_MAX; i++) G.inv[i] = (signed char)d[OFF_INV + i];
     }
     /* valori impossibili (file alterato): si riparte da un punto sicuro */
     for (i = 0; i < G.ninv; i++)

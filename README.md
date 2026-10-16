@@ -12,19 +12,31 @@ Il protagonista cambia dimensione con la profondità, proietta un'ombra a
 terra e ogni tanto sbatte le palpebre. Cammina solo dove c'è davvero il
 pavimento: le zone calpestabili sono poligoni che seguono il bordo del molo,
 la sabbia e il pontile (tabella `walk_areas` in `src/script.c`).
-La grafica nasce dai mockup in [`reference/mockup.png`](reference/mockup.png):
+La grafica nasce dai mockup in [`reference/mockup.png`](reference/mockup.png)
+(Parte I) e [`reference/mockup2.png`](reference/mockup2.png) (Parti II e III):
 le scene vengono ritagliate, ripulite e convertite in 1-bit con il
 dithering di Atkinson (quello di MacPaint).
 
 ![Schermate di riferimento](reference/mockup.png)
+![Schermate di riferimento delle Parti II e III](reference/mockup2.png)
 
 ## La storia
 
-Sei appena sbarcato a Puerto Polli, l'isola dove chiunque può diventare
-pirata... basta ottenere la benedizione del **Custode di Puerto Polli**,
-che non è un pollo qualunque. Esplora il molo, la Taberna, la Cala dei
-Gabbiani e le Rovine, parla con l'oste Bartolo, con Capitan Barbapollo e con
-il Mozzo Pino, e supera le tre prove del Custode.
+L'avventura è divisa in tre parti, con 10 luoghi.
+
+1. **Il Custode.** Sei appena sbarcato a Puerto Polli, l'isola dove chiunque
+   può diventare pirata... basta ottenere la benedizione del **Custode di
+   Puerto Polli**, che non è un pollo qualunque. Esplora il molo, la Taberna,
+   la Cala dei Gabbiani e le Rovine, parla con l'oste Bartolo, con Capitan
+   Barbapollo e con il Mozzo Pino, e supera le tre prove del Custode.
+2. **La luce del Faro.** Un pirata senza nave è solo un tizio col cappello, e
+   da vent'anni nessuna nave attracca: il faro è acceso ma non gira più.
+   Entra nel faro (la chiave ce l'ha un gabbiano molto vanitoso) e rimettilo
+   in funzione.
+3. **Il vascello di Capitan Brodo.** La luce del faro rivela una nave
+   fantasma nascosta nella Grotta del Brodo. Il suo capitano vuole fare il
+   brodo con il Custode: battilo nel **duello di proverbi marinari** e la nave
+   sarà tua.
 
 ## Come si gioca
 
@@ -54,6 +66,22 @@ Senza verbo selezionato, il clic su un oggetto dell'inventario lo esamina
 6. Molo: **Dai** il calamaro al gabbiano, poi **Raccogli** la piuma.
 7. Rovine: parla col Custode («Voglio diventare un pirata»), mostragli il
    cappello e **Dai** piuma e libro.
+
+**Parte II**
+
+8. Molo: **Parla** con Barbapollo: ti regala la bussola.
+9. Mappa → Il Faro: **Dai** la bussola al gabbiano → chiave; **Apri** la porta.
+10. Nel faro: **Raccogli** lanterna e carta nautica, **Usa** la lanterna con
+    il meccanismo (olio), poi **Spingi** la lente.
+
+**Parte III**
+
+11. **Guarda** la carta nautica: la Grotta del Brodo compare sulla mappa.
+12. Grotta: entra (serve la lanterna), **Raccogli** il teschio e **Apri** il
+    forziere (i proverbi di Brodo).
+13. Fuori: **Dai** il teschio a Ossobuco, **Usa** la barca, poi sali sulla nave.
+14. **Parla** con Capitan Brodo e sfidalo: «...si sveglia in mare»,
+    «...grog a volontà», «...non sale a bordo».
 </details>
 
 ## Giocare subito
@@ -73,7 +101,7 @@ salvataggio su disco funzionano.
 
 - Mac Plus, SE, Classic, Classic II, LC... (68000 o superiore)
 - System 6.0.x o System 7.x
-- 1 MB di memoria libera (minimo 768 KB)
+- 1 MB di memoria libera (minimo 640 KB)
 - Schermo 512 × 342 o più grande: su 512 × 342 il gioco nasconde la barra dei
   menu e usa tutto lo schermo; su schermi più grandi la finestra è centrata.
 
@@ -123,7 +151,7 @@ cmake .. && make
 ctest                    # test automatico: gioca tutta l'avventura
 ```
 
-Il test (`src/test/main_test.c`) completa l'avventura simulando i clic,
+Il test (`src/test/main_test.c`) completa tutte e tre le parti simulando i clic,
 verifica ogni passaggio della soluzione e salva/carica una partita; può anche
 salvare schermate in formato PBM. Controlla inoltre a ogni fotogramma che il
 ridisegno parziale coincida con quello completo, e verifica: niente pixel
@@ -142,15 +170,17 @@ dei messaggi mai piena.
 | `src/save.c` | salvataggi (formato `PPS2`, compatibilità con `PPS1`) |
 | `src/ui.c` | pannello dei verbi e dell'inventario, finestre in stile Macintosh, titolo, mappa, finale |
 | `src/core.h` | stato e funzioni condivise tra i moduli del motore |
-| `src/script.c` | la storia: stanze, oggetti cliccabili, zone calpestabili, prospettiva, animazioni, dialoghi e la **tabella delle regole** (`rules`): verbi + oggetto + condizioni → battute ed effetti |
-| `src/anim.c` | animazioni degli sfondi: onde, oscillazioni, respiro dei personaggi, lanterna, stelle, gabbiani |
+| `src/script.c` | la storia: stanze, oggetti cliccabili, zone calpestabili, prospettiva, animazioni, dialoghi (con il duello di proverbi), cartelli delle tre parti e la **tabella delle regole** (`rules`): verbi + oggetto + condizioni → battute ed effetti |
+| `src/anim.c` | animazioni degli sfondi: onde, cascata, oscillazioni, bocche, luci che tremolano o girano (lanterna, candele, lente del faro), stelle, gabbiani; un'animazione può dipendere da una flag della storia |
 | `src/gfx.c` | grafica 1-bit su framebuffer in formato BitMap QuickDraw (512×342, 64 byte per riga) |
 | `src/assets.c` | **generato**: sfondi compressi PackBits, icone, sprite, font |
 | `src/mac/main_mac.c` | Toolbox Macintosh: finestra, eventi, CopyBits, File Manager |
 | `src/sdl/main_sdl.c` | versione PC con SDL2 |
 | `src/test/main_test.c` | test automatico della soluzione |
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
-| `tools/hero.py` | sprite del protagonista: testa, busto e braccia ricavati dal protagonista del mockup (sagoma tracciata a mano, ridotta e convertita in retini fissi), gambe e stivali disegnati per la camminata; 3 misure × 9 fotogrammi più il cappello come strato |
+| `tools/scenes2.py` | scene delle Parti II e III dal secondo mockup: rimozione di box e protagonista, oggetti raccoglibili come «toppe», icone nuove, contrasto locale (CLAHE) prima del dithering |
+| `tools/seams.py` | ridimensionamento «sensibile al contenuto» (seam carving): porta i mockup 4:3 al 2:1 dello schermo allargando cielo, mare e roccia senza deformare faro e personaggi |
+| `tools/hero.py` | sprite del protagonista: testa, busto e braccia ricavati dal protagonista del mockup (sagoma tracciata a mano, ridotta e convertita in retini fissi), gambe e stivali disegnati per la camminata; 4 misure × 9 fotogrammi più il cappello come strato |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.

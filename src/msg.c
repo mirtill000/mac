@@ -5,6 +5,7 @@
 #include <string.h>
 #include "core.h"
 #include "platform.h"
+#include "anim.h"
 
 /* ------------------------------------------------------------------ */
 /* Servizi per i copioni                                              */
@@ -82,9 +83,15 @@ int has_item(int it)
     return 0;
 }
 
+int anim_cond_ok(int cond)
+{
+    if (!cond) return 1;
+    return cond > 0 ? flag(cond - 1) : !flag(-cond - 1);
+}
+
 void add_item(int it)
 {
-    if (has_item(it) || G.ninv >= IT_COUNT) return;
+    if (has_item(it) || G.ninv >= INV_MAX) return;
     G.inv[G.ninv++] = (signed char)it;
     panel_dirty = 1;
 }
@@ -116,6 +123,32 @@ void draw_prop(int item, int x, int y)
                b->w, b->h, b->rowBytes, x, y);
 }
 
+/* cartello a tutto schermo: inizio della Parte II o III, oppure il finale */
+void show_chapter(int part)
+{
+    mode = MODE_END;
+    chapter = part;
+    dlg_npc = -1;
+    dlg_ending = 0;
+    walking = 0;
+    pend_active = 0;
+    need_rebuild = 1;
+    need_full = 1;
+}
+
+void refresh_room(void)
+{
+    need_rebuild = 1;
+    need_full = 1;
+}
+
+/* oggetto raccoglibile dipinto nella scena (vedi tools/scenes2.py) */
+void draw_patch(int patch)
+{
+    const Patch *p = &asset_patch[patch];
+    gfx_bitmap(&p->bm, p->x, p->y);
+}
+
 void go_room(int room)
 {
     int from = G.room;
@@ -129,6 +162,19 @@ void go_room(int room)
         break;
     case ROOM_TAVERN: G.hx = 60;  G.hy = 281; G.dir = 1; break;
     case ROOM_BEACH:  G.hx = 60;  G.hy = 226; G.dir = 1; break;
+    case ROOM_FARO:
+        if (from == ROOM_FARO_IN) { G.hx = 380; G.hy = 181; G.dir = -1; }
+        else { G.hx = 44; G.hy = 230; G.dir = 1; }
+        break;
+    case ROOM_FARO_IN: G.hx = 140; G.hy = 182; G.dir = 1; break;
+    case ROOM_GROTTA:
+        if (from == ROOM_GROTTA_IN) { G.hx = 230; G.hy = 172; G.dir = 1; }
+        else if (from == ROOM_NAVE) { G.hx = 384; G.hy = 205; G.dir = -1; }
+        else { G.hx = 48; G.hy = 226; G.dir = 1; }
+        break;
+    case ROOM_GROTTA_IN: G.hx = 56; G.hy = 192; G.dir = 1; break;
+    case ROOM_NAVE:      G.hx = 100; G.hy = 230; G.dir = 1; break;   /* in barca */
+    case ROOM_NAVE_IN:   G.hx = 64; G.hy = 222; G.dir = 1; break;
     default:          G.hx = 48;  G.hy = 230; G.dir = 1; break;
     }
     mode = MODE_PLAY;
@@ -226,12 +272,10 @@ Msg *cur_msg(void) { return msg_count ? &msgs[msg_head] : 0; }
 void run_call(int c)
 {
     switch (c) {
-    case CALL_ENDING:
-        mode = MODE_END;
-        dlg_npc = -1;
-        need_rebuild = 1;
-        need_full = 1;
-        break;
+    case CALL_ENDING: show_chapter(0); break;
+    case CALL_PART2:  show_chapter(2); break;
+    case CALL_PART3:  show_chapter(3); break;
+    case CALL_FERRY:  go_room(ROOM_NAVE); break;
     default:
         break;
     }

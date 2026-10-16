@@ -6,15 +6,18 @@ typedef struct { short w, h; const unsigned char *packed; } PackedBitmap;
 typedef struct { short w, h, rowBytes; const unsigned char *bits; } Bitmap;
 typedef struct { short w, h, rowBytes; const unsigned char *bits, *mask; } Sprite;
 
-enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT, BG_COUNT };
-#define ITEM_ICON_COUNT 8
+typedef struct { short x, y; Bitmap bm; } Patch;
+typedef struct { short x, y, w, h, n; const unsigned char *data; } FlickerSet;
+
+enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT,
+       BG_FARO, BG_FARO_IN, BG_GROTTA, BG_GROTTA_IN, BG_NAVE, BG_NAVE_IN, BG_COUNT };
+enum { PATCH_LANTERNA, PATCH_CARTA, PATCH_TESCHIO, PATCH_COUNT };
+#define ITEM_ICON_COUNT 12
 #define ICON_SMALL 32
 #define ICON_BIG 44
-#define HERO_SIZES 3
+#define HERO_SIZES 4
 #define HERO_FRAMES 9          /* fermo, parla, 6 camminata, occhi chiusi */
-#define LANTERN_X 168
-#define LANTERN_Y 96
-#define LANTERN_FRAMES 4
+#define FLICKER_COUNT 3          /* 0 lanterna Taberna, 1 lente del faro, 2 candele */
 #define STAR_COUNT 32           /* coordinate: x/2, y */
 #define GULL_W 16
 #define GULL_H 5
@@ -35,8 +38,9 @@ extern const short asset_hero_full_w[HERO_SIZES];            /* larghezza prima 
 extern const short asset_hero_ox[HERO_SIZES];                /* x del ritaglio nel disegno pieno */
 extern const unsigned char asset_hero_head_down[HERO_FRAMES];
 extern const unsigned char *const asset_gull;          /* 2 fotogrammi, 2 byte per riga */
-extern const Bitmap asset_lantern[LANTERN_FRAMES];
+extern const FlickerSet asset_flicker[FLICKER_COUNT];
 extern const unsigned char asset_stars[STAR_COUNT][2];
+extern const Patch asset_patch[PATCH_COUNT];
 extern const unsigned char *const asset_font[2];
 
 #endif

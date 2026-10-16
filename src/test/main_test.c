@@ -245,7 +245,8 @@ static void test_walk_points(void)
     bad = 0;
     for (r = 0; r < ROOM_COUNT; r++) {
         go_room(r);
-        if (!walkable(G.hx, G.hy)) bad++;
+        if (hero_hidden()) continue;          /* in barca: niente camminata */
+        if (!walkable(G.hx, G.hy)) { printf("       ingresso fuori: stanza %d (%d,%d)\n", r, G.hx, G.hy); bad++; }
     }
     CHECK(bad == 0, "tutti gli ingressi delle stanze sono calpestabili");
     clear_interaction();
@@ -448,9 +449,152 @@ int main(int argc, char **argv)
     hot(H_CUSTODE);
     settle_skip();
     CHECK(game_debug(DBG_FLAG, F_GAME_WON), "partita vinta");
-    frames(60);
+    settle_skip();
+    frames(10);
+    CHECK(game_debug(DBG_MODE, 0) == 3, "cartello della Parte II");
+    shot("13_parte2");
+    click(256, 300);
+    frames(4);
+    CHECK(game_debug(DBG_MODE, 0) == 1 && game_debug(DBG_ROOM, 0) == ROOM_NIGHT, "si riprende alle Rovine");
+
+    printf("Parte II: il faro\n");
+    travel(1);
+    verb(V_PARLA);
+    hot(H_BARBA);
+    settle_skip();
+    CHECK(game_debug(DBG_HAS, IT_BUSSOLA), "Barbapollo regala la bussola");
+    {
+        int i;
+        for (i = 4; i >= 0 && game_debug(DBG_DIALOG, 0) >= 0; i--) { choose(i); settle_skip(); }
+    }
+    CHECK(game_debug(DBG_DIALOG, 0) < 0, "dialogo chiuso");
+    travel(0);
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_FARO, "al faro");
+    frames(20);
+    shot("14_faro");
+    hot(H_PORTA_F);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_FARO && !game_debug(DBG_FLAG, F_FARO_OPEN), "la porta e' chiusa");
+    verb(V_DAI);
+    inv_click(IT_BUSSOLA);
+    hot(H_GABBIANO_F);
+    settle_skip();
+    CHECK(game_debug(DBG_HAS, IT_CHIAVE) && !game_debug(DBG_HAS, IT_BUSSOLA), "il gabbiano scambia la chiave");
+    verb(V_APRI);
+    hot(H_PORTA_F);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_FARO_IN && !game_debug(DBG_HAS, IT_CHIAVE), "dentro il faro");
+    shot("15_faro_dentro");
+    verb(V_SPINGI);
+    hot(H_LENTE);
+    settle_skip();
+    CHECK(!game_debug(DBG_FLAG, F_LIGHT_ON), "la lente e' bloccata");
+    verb(V_RACCOGLI);
+    hot(H_LANTERNA_F);
+    settle_skip();
+    verb(V_RACCOGLI);
+    hot(H_CARTA);
+    settle_skip();
+    CHECK(game_debug(DBG_HAS, IT_LANTERNA) && game_debug(DBG_HAS, IT_CARTA), "lanterna e carta nautica");
+    verb(V_USA);
+    inv_click(IT_LANTERNA);
+    hot(H_MECCANISMO);
+    settle_skip();
+    CHECK(game_debug(DBG_FLAG, F_GEARS_OILED), "ingranaggi oliati");
+    verb(V_SPINGI);
+    hot(H_LENTE);
+    settle();
+    frames(10);
+    shot("16_luce");
+    settle_skip();
+    frames(10);
+    CHECK(game_debug(DBG_FLAG, F_LIGHT_ON) && game_debug(DBG_MODE, 0) == 3, "il faro gira: Parte III");
+    click(256, 300);
+    frames(4);
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_FARO_IN, "si riprende nel faro");
+    frames(30);
+    shot("17_lente");
+
+    printf("Parte III: la grotta\n");
+    verb(V_GUARDA);
+    inv_click(IT_CARTA);
+    settle_skip();
+    CHECK(game_debug(DBG_FLAG, F_KNOWS_GROTTA), "la grotta e' sulla carta");
+    inv_click(IT_MAPPA);
+    frames(2);
+    shot("18_mappa_grotta");
+    click(map_places[5].x + 20, 30 + map_places[5].y + 10);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_GROTTA, "alla grotta");
+    shot("19_grotta");
+    verb(V_PARLA);
+    hot(H_OSSOBUCO);
+    settle();
+    frames(4);
+    shot("20_ossobuco");
+    settle_skip();
+    choose(1);
+    settle_skip();
+    CHECK(game_debug(DBG_FLAG, F_KNOWS_TOLL), "il pedaggio e' un teschio");
+    choose(2);
+    settle_skip();
+    hot(H_INGRESSO);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_GROTTA_IN, "dentro la grotta");
+    frames(20);
+    shot("21_grotta_dentro");
+    verb(V_RACCOGLI);
+    hot(H_TESCHIO);
+    settle_skip();
+    verb(V_APRI);
+    hot(H_FORZIERE);
+    settle_skip();
+    CHECK(game_debug(DBG_HAS, IT_TESCHIO) && game_debug(DBG_FLAG, F_CHEST2_OPEN), "teschio e proverbi");
+    hot(H_USCITA_G);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_GROTTA, "di nuovo fuori");
+    verb(V_DAI);
+    inv_click(IT_TESCHIO);
+    hot(H_OSSOBUCO);
+    settle_skip();
+    CHECK(game_debug(DBG_FLAG, F_FERRY), "pedaggio pagato");
+    verb(V_USA);
+    hot(H_BARCA);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_NAVE, "in barca verso la nave");
+    frames(20);
+    shot("22_nave");
+    hot(H_NAVE_E);
+    settle_skip();
+    CHECK(game_debug(DBG_ROOM, 0) == ROOM_NAVE_IN, "a bordo");
+    shot("23_cabina");
+
+    printf("Parte III: il duello\n");
+    verb(V_PARLA);
+    hot(H_BRODO);
+    settle();
+    frames(4);
+    shot("24_brodo");
+    settle_skip();
+    CHECK(game_debug(DBG_DIALOG, 0) == SP_BRODO, "dialogo con Brodo");
+    choose(0);                 /* sfida */
+    settle_skip();
+    choose(0);                 /* risposta sbagliata */
+    settle_skip();
+    CHECK(game_debug(DBG_DIALOG, 0) == SP_BRODO && !game_debug(DBG_FLAG, F_BRODO_WON), "risposta sbagliata: si ricomincia");
+    choose(0);
+    settle_skip();
+    shot("25_duello");
+    choose(1);                 /* le risposte giuste: vedi duel_order */
+    settle_skip();
+    choose(0);
+    settle_skip();
+    choose(2);
+    settle_skip();
+    frames(10);
+    CHECK(game_debug(DBG_FLAG, F_BRODO_WON), "Brodo sconfitto");
     CHECK(game_debug(DBG_MODE, 0) == 3, "schermata finale");
-    shot("13_fine");
+    shot("26_fine");
 
     printf("Caricamento\n");
     click(256, 300);

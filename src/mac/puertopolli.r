@@ -20,7 +20,7 @@ resource 'SIZE' (-1) {
 	reserved,
 	reserved,
 	1024 * 1024,
-	768 * 1024
+	640 * 1024
 };
 
 resource 'vers' (1) {

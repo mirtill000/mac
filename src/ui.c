@@ -415,7 +415,7 @@ int map_at(int x, int y)
     int i;
     for (i = 0; i < map_place_count; i++) {
         const MapPlace *p = &map_places[i];
-        if (in_rect(x, y - MAP_Y, p->x, p->y, p->w, p->h)) return i;
+        if (script_map_visible(i) && in_rect(x, y - MAP_Y, p->x, p->y, p->w, p->h)) return i;
     }
     return -1;
 }
@@ -425,6 +425,7 @@ void draw_map(void)
     gfx_fill(0, 0, FB_W, MAP_Y, PAT_BLACK);
     gfx_fill(0, MAP_Y + 282, FB_W, FB_H - MAP_Y - 282, PAT_BLACK);
     memcpy(gfx_fb + MAP_Y * FB_RB, bgbuf, 282 * FB_RB);
+    script_draw_map();
     text_center(8, "Mappa di Puerto Polli", FONT_BOLD, COL_WHITE);
     if (map_hover >= 0) {
         const MapPlace *p = &map_places[map_hover];
@@ -448,10 +449,12 @@ void draw_end(void)
     memcpy(gfx_fb, bgbuf, SCENE_H * FB_RB);
     gfx_fill(0, SCENE_H, FB_W, FB_H - SCENE_H, PAT_BLACK);
     gfx_hline(0, FB_W - 1, SCENE_H + 2, COL_WHITE);
-    text_center(SCENE_H + 12, "~  F I N E  ~", FONT_BOLD, COL_WHITE);
-    text_center(SCENE_H + 34, "Sei ufficialmente un Pirata di Puerto Polli!", FONT_REGULAR, COL_WHITE);
-    text_center(SCENE_H + 52, "Grazie per aver giocato.", FONT_REGULAR, COL_WHITE);
-    text_center(SCENE_H + 80, "Clicca per tornare al titolo", FONT_REGULAR, COL_WHITE);
+    /* finale o cartello di inizio parte: i testi sono nella storia */
+    text_center(SCENE_H + 12, chapter_text(chapter, 0), FONT_BOLD, COL_WHITE);
+    text_center(SCENE_H + 34, chapter_text(chapter, 1), FONT_REGULAR, COL_WHITE);
+    text_center(SCENE_H + 52, chapter_text(chapter, 2), FONT_REGULAR, COL_WHITE);
+    text_center(SCENE_H + 80, chapter ? "Clicca per continuare" : "Clicca per tornare al titolo",
+                FONT_REGULAR, COL_WHITE);
     gfx_dirty_all();
 }
 

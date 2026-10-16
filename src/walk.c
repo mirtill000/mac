@@ -35,7 +35,7 @@ void clamp_walk(short *x, short *y)
     const WalkArea *w = &walk_areas[G.room];
     long best = -1;
     int bx = *x, by = *y, i, k, step;
-    if (walkable(*x, *y)) return;
+    if (!w->npoly || walkable(*x, *y)) return;
     for (i = 0; i < w->npoly; i++) {
         const WalkPoly *p = &w->poly[i];
         for (k = 0; k < p->n; k++) {
@@ -68,7 +68,7 @@ void walk_to(int x, int y)
 {
     tx = (short)x; ty = (short)y;
     clamp_walk(&tx, &ty);
-    walking = (tx != G.hx || ty != G.hy);
+    walking = !hero_hidden() && (tx != G.hx || ty != G.hy);
 }
 
 static const Hotspot *find_hotspot(int id)
@@ -104,6 +104,7 @@ void execute(int verb, int o1, int o2, int exit_to)
     if (verb == V_VAI) {
         if (exit_to == ROOM_MAP) open_map();
         else if (exit_to >= 0) go_room(exit_to);
+        else script_action(V_VAI, o1, o2);   /* porte e passaggi con condizioni */
         return;
     }
     if (!script_action(verb, o1, o2)) script_default(verb, o1, o2);
@@ -134,7 +135,8 @@ void act(int verb, int o1, int o2, int where)
 /* "da solo": oggetti che si possono usare senza bersaglio */
 int usable_alone(int it)
 {
-    return it == IT_MAPPA || it == IT_CAPPELLO || it == IT_LIBRO;
+    return it == IT_MAPPA || it == IT_CAPPELLO || it == IT_LIBRO ||
+           it == IT_CARTA || it == IT_BUSSOLA;
 }
 
 void click_object(int obj)
@@ -182,7 +184,7 @@ void update_walk(void)
     dx = tx - G.hx;
     dy = ty - G.hy;
     {
-        static const signed char speed[HERO_SIZES] = {4, 5, 6};
+        static const signed char speed[HERO_SIZES] = {3, 4, 5, 6};
         int v = speed[hero_size()];
         sx = dx > v ? v : (dx < -v ? -v : dx);
     }

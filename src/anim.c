@@ -125,7 +125,7 @@ void anim_reset(int sc, const unsigned char *b, unsigned char *c)
     scene = sc;
     nact = 0;
     for (i = 0; i < anim_count && nact < MAX_ANIMS; i++) {
-        if (anims[i].scene != sc) continue;
+        if (anims[i].scene != sc || !anim_cond_ok(anims[i].cond)) continue;
         act[nact] = &anims[i];
         memset(&st[nact], 0, sizeof(AnimState));
         if (anims[i].type == AN_TALK) {
@@ -264,18 +264,40 @@ static int step_talk(const Anim *a, AnimState *s, int speaker, GRect *r, int *an
     return 1;
 }
 
+/* luce che tremola (lanterna, candela: fotogrammi a caso) o che gira
+   (lente del faro: fotogrammi in sequenza) */
 static int step_flicker(const Anim *a, AnimState *s, GRect *r, int *any)
 {
-    const Bitmap *b;
-    int y, f;
+    const FlickerSet *fs = &asset_flicker[a->p1];
+    int y, f, rb = fs->w >> 3;
+    const unsigned char *bits;
     if (--s->timer > 0) return 0;
-    s->timer = (short)(2 + rand_n(5));
-    f = rand_n(LANTERN_FRAMES);
-    if (f == s->phase) return 0;
+    if (a->p2) {
+        s->timer = (short)(a->p3 > 0 ? a->p3 : 2);
+        f = (s->phase + 1) % fs->n;
+    } else {
+        s->timer = (short)(2 + rand_n(5));
+        f = rand_n(fs->n);
+        if (f == s->phase) return 0;
+    }
     s->phase = (short)f;
-    b = &asset_lantern[f];
-    for (y = 0; y < b->h; y++)
-        memcpy(cur + (LANTERN_Y + y) * FB_RB + (LANTERN_X >> 3), b->bits + y * b->rowBytes, b->rowBytes);
+    bits = fs->data + (long)f * rb * fs->h;
+    for (y = 0; y < fs->h; y++)
+        memcpy(cur + (fs->y + y) * FB_RB + (fs->x >> 3), bits + y * rb, rb);
+    grow(r, any, fs->x, fs->y, fs->x + fs->w, fs->y + fs->h);
+    return 1;
+}
+
+/* acqua che cade: le righe della zona scorrono verso il basso (a byte) */
+static int step_fall(const Anim *a, AnimState *s, GRect *r, int *any)
+{
+    int y, h = a->y1 - a->y0, bx0 = a->x0 >> 3, n = (a->x1 - a->x0) >> 3;
+    if (tick % (unsigned long)(a->p3 > 0 ? a->p3 : 2)) return 0;
+    s->phase = (short)((s->phase + (a->p1 > 0 ? a->p1 : 2)) % h);
+    for (y = a->y0; y < a->y1; y++) {
+        int sy = a->y0 + (y - a->y0 - s->phase + h) % h;
+        memcpy(cur + y * FB_RB + bx0, base + sy * FB_RB + bx0, n);
+    }
     grow(r, any, a->x0, a->y0, a->x1, a->y1);
     return 1;
 }
@@ -379,6 +401,7 @@ int anim_step(int speaker, const GRect *avoid, GRect *out, int max)
         case AN_TWINKLE: step_twinkle(a, &r, &any); break;
         case AN_FLYER:   step_flyer(a, &st[i], &r, &any); break;
         case AN_TALK:    step_talk(a, &st[i], speaker, &r, &any); break;
+        case AN_FALL:    step_fall(a, &st[i], &r, &any); break;
         }
         if (!any) continue;
         if (n < max) {

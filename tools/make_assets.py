@@ -200,8 +200,14 @@ def scene_map(g):
 # Animazioni
 # ---------------------------------------------------------------------------
 
-LANTERN_RECT = (168, 96, 232, 168)        # allineato al byte
-LANTERN_LEVELS = (0, 26, -18, 12)
+# luci animate: scena, rettangolo (x allineate al byte), centro, livelli,
+# raggio, tipo ("glow": tremolio; "band": fascia che gira, livelli =
+# (fotogrammi, raggio verticale))
+FLICKERS = [
+    ("tavern", (168, 96, 232, 168), (198, 128), (0, 26, -18, 12), 38, "glow"),
+    ("faro_in", (264, 0, 376, 112), (320, 54), (10, 56), 52, "band"),
+    ("nave_in", (224, 96, 288, 168), (258, 118), (0, 30, -22, 14), 34, "glow"),
+]
 
 
 def find_stars(bits):
@@ -225,7 +231,9 @@ def find_stars(bits):
 # ---------------------------------------------------------------------------
 
 ICON_NAMES = ["bottiglia", "moneta", "chiave", "mappa",
-              "piuma", "calamaro", "cappello", "libro"]
+              "piuma", "calamaro", "cappello", "libro",
+              "bussola", "lanterna", "carta", "teschio"]
+PATCH_NAMES = ["lanterna", "carta", "teschio"]
 ICON_SMALL = 32
 ICON_BIG = 44
 
@@ -341,7 +349,21 @@ def main():
         scenes[name] = bits
         grays[name] = img
 
+    # --- scene della Parte II e III (secondo mockup) ---
+    import scenes2
+    g2 = scenes2.load()
+    patches = {}
+    for name, fn, lo, hi, gm in scenes2.SCENES:
+        bits, pt, gray = scenes2.process(g2, sys.modules[__name__], name, fn, lo, hi, gm)
+        save_preview(name, bits)
+        scenes[name] = bits
+        grays[name] = gray
+        patches.update(pt)
+
     small, big = icons(g)
+    for name, src, mask in scenes2.icon_sources(g2):
+        small.append(scenes2.make_icon(sys.modules[__name__], src, mask, ICON_SMALL))
+        big.append(scenes2.make_icon(sys.modules[__name__], src, mask, ICON_BIG))
     for i, n in enumerate(ICON_NAMES):
         save_preview("icon_" + n, big[i])
 
@@ -352,15 +374,32 @@ def main():
     hero_sizes = [(hh, hero.all_frames(hh)) for hh in hero.HEIGHTS]
     nframes = len(hero_sizes[0][1])
 
-    # --- varianti di luce della lanterna della Taberna (tremolio) ---
-    lantern = []
-    lx0, ly0, lx1, ly1 = LANTERN_RECT
-    yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
-    fall = np.clip(1.0 - np.hypot(xx - 198, (yy - 128) * 1.2) / 38.0, 0, 1)
-    for delta in LANTERN_LEVELS:
-        v = atkinson(np.clip(grays["tavern"] + delta * fall, 0, 255))
-        lantern.append(v[ly0:ly1, lx0:lx1])
-    save_preview("lantern", np.hstack(lantern))
+    # --- luci che tremolano o girano: lanterna della Taberna, lente del
+    #     faro (una fascia chiara che gira), candele della nave ---
+    flickers = []
+    for scene, rect, center, lv, radius, kind in FLICKERS:
+        x0, y0, x1, y1 = rect
+        gray = grays[scene]
+        frames = []
+        if kind == "band":
+            yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
+            cx, cy = center
+            inside = ((xx - cx) / float(radius)) ** 2 + ((yy - cy) / float(lv[1])) ** 2 < 1.0
+            for k in range(lv[0]):
+                bx = cx - radius + (2 * radius) * k / float(lv[0])
+                band = np.clip(1.0 - np.abs(xx - bx) / 16.0, 0, 1) * inside
+                v = atkinson(np.clip(gray - 120 * band, 0, 255))
+                v = np.where(inside, v, scenes[scene])
+                frames.append(v[y0:y1, x0:x1])
+        else:
+            yy, xx = np.mgrid[0:SCENE_H, 0:SCREEN_W]
+            fall = np.clip(1.0 - np.hypot(xx - center[0], (yy - center[1]) * 1.2) / radius, 0, 1)
+            for delta in lv:
+                v = atkinson(np.clip(gray + delta * fall, 0, 255))
+                v = np.where(fall > 0, v, scenes[scene])
+                frames.append(v[y0:y1, x0:x1])
+        flickers.append((rect, frames))
+        save_preview("flicker_" + scene, np.hstack(frames))
 
     # --- stelle del cielo notturno (per lo scintillio) ---
     stars = find_stars(scenes["night"])
@@ -371,7 +410,8 @@ def main():
         f.write('#include "assets.h"\n\n')
         total = 0
         # sfondi compressi PackBits riga per riga
-        order = ["title", "map", "dock", "tavern", "beach", "night"]
+        order = ["title", "map", "dock", "tavern", "beach", "night",
+                 "faro", "faro_in", "grotta", "grotta_in", "nave", "nave_in"]
         for n in order:
             by, rb = bits_to_bytes(scenes[n])
             data = b"".join(packbits(bytes(r)) for r in by)
@@ -407,11 +447,11 @@ def main():
         f.write("const unsigned char *const asset_icon_mask = icons_small_mask;\n")
         f.write("const Bitmap asset_icon_small[ITEM_ICON_COUNT] = {\n")
         rbs = (ICON_SMALL + 7) // 8
-        for i in range(8):
+        for i in range(len(small)):
             f.write("  { %d, %d, %d, icons_small + %d },\n" % (ICON_SMALL, ICON_SMALL, rbs, i * rbs * ICON_SMALL))
         f.write("};\nconst Bitmap asset_icon_big[ITEM_ICON_COUNT] = {\n")
         rbb = (ICON_BIG + 7) // 8
-        for i in range(8):
+        for i in range(len(big)):
             f.write("  { %d, %d, %d, icons_big + %d },\n" % (ICON_BIG, ICON_BIG, rbb, i * rbb * ICON_BIG))
         f.write("};\n\n")
         # sprite protagonista: per ogni misura i fotogrammi senza cappello piu'
@@ -472,13 +512,28 @@ def main():
         c_array("gull_data", gdata, f)
         f.write("const unsigned char *const asset_gull = gull_data;\n\n")
 
-        # lanterna: varianti opache allineate al byte
-        ldata = b"".join(bits_to_bytes(v)[0].tobytes() for v in lantern)
-        c_array("lantern_data", ldata, f)
-        f.write("const Bitmap asset_lantern[LANTERN_FRAMES] = {\n")
-        lrb = (lx1 - lx0) // 8
-        for i in range(len(lantern)):
-            f.write("  { %d, %d, %d, lantern_data + %d },\n" % (lx1 - lx0, ly1 - ly0, lrb, i * lrb * (ly1 - ly0)))
+        # luci: varianti opache allineate al byte
+        for i, (rect, frames) in enumerate(flickers):
+            data = b"".join(bits_to_bytes(v)[0].tobytes() for v in frames)
+            c_array("flicker_%d" % i, data, f)
+        f.write("const FlickerSet asset_flicker[FLICKER_COUNT] = {\n")
+        for i, (rect, frames) in enumerate(flickers):
+            x0, y0, x1, y1 = rect
+            f.write("  { %d, %d, %d, %d, %d, flicker_%d },\n" % (x0, y0, x1 - x0, y1 - y0, len(frames), i))
+        f.write("};\n\n")
+
+        # toppe: oggetti raccoglibili dipinti nelle scene nuove
+        pdata = b""
+        poffs = []
+        for n in PATCH_NAMES:
+            x, y, b = patches[n]
+            by, rb = bits_to_bytes(b)
+            poffs.append((x, y, b.shape[1], b.shape[0], rb, len(pdata)))
+            pdata += by.tobytes()
+        c_array("patch_data", pdata, f)
+        f.write("const Patch asset_patch[PATCH_COUNT] = {\n")
+        for (x, y, w, h, rb, off) in poffs:
+            f.write("  { %d, %d, { %d, %d, %d, patch_data + %d } },\n" % (x, y, w, h, rb, off))
         f.write("};\n\n")
 
         # stelle
@@ -510,15 +565,18 @@ typedef struct { short w, h; const unsigned char *packed; } PackedBitmap;
 typedef struct { short w, h, rowBytes; const unsigned char *bits; } Bitmap;
 typedef struct { short w, h, rowBytes; const unsigned char *bits, *mask; } Sprite;
 
-enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT, BG_COUNT };
-#define ITEM_ICON_COUNT 8
+typedef struct { short x, y; Bitmap bm; } Patch;
+typedef struct { short x, y, w, h, n; const unsigned char *data; } FlickerSet;
+
+enum { BG_TITLE, BG_MAP, BG_DOCK, BG_TAVERN, BG_BEACH, BG_NIGHT,
+       BG_FARO, BG_FARO_IN, BG_GROTTA, BG_GROTTA_IN, BG_NAVE, BG_NAVE_IN, BG_COUNT };
+enum { PATCH_LANTERNA, PATCH_CARTA, PATCH_TESCHIO, PATCH_COUNT };
+#define ITEM_ICON_COUNT 12
 #define ICON_SMALL %d
 #define ICON_BIG %d
 #define HERO_SIZES %d
 #define HERO_FRAMES %d          /* fermo, parla, 6 camminata, occhi chiusi */
-#define LANTERN_X %d
-#define LANTERN_Y %d
-#define LANTERN_FRAMES %d
+#define FLICKER_COUNT %d          /* 0 lanterna Taberna, 1 lente del faro, 2 candele */
 #define STAR_COUNT %d           /* coordinate: x/2, y */
 #define GULL_W 16
 #define GULL_H 5
@@ -539,13 +597,14 @@ extern const short asset_hero_full_w[HERO_SIZES];            /* larghezza prima 
 extern const short asset_hero_ox[HERO_SIZES];                /* x del ritaglio nel disegno pieno */
 extern const unsigned char asset_hero_head_down[HERO_FRAMES];
 extern const unsigned char *const asset_gull;          /* 2 fotogrammi, 2 byte per riga */
-extern const Bitmap asset_lantern[LANTERN_FRAMES];
+extern const FlickerSet asset_flicker[FLICKER_COUNT];
 extern const unsigned char asset_stars[STAR_COUNT][2];
+extern const Patch asset_patch[PATCH_COUNT];
 extern const unsigned char *const asset_font[2];
 
 #endif
 """ % (ICON_SMALL, ICON_BIG, len(hero_sizes), nframes,
-       lx0, ly0, len(lantern), len(stars),
+       len(flickers), len(stars),
        FONT_W, FONT_H))
 
 

@@ -21,12 +21,13 @@ typedef struct {
     short hx, hy;
     unsigned char flags[FLAG_BYTES];
     unsigned char ninv;
-    signed char inv[IT_COUNT];
+    signed char inv[INV_MAX];
 } GameState;
 
 extern GameState G;
 
 extern int mode, modal, modal_from_title, quit_requested, text_speed;
+extern int chapter;               /* MODE_END: 0 finale, 2 o 3 cartello della parte */
 extern unsigned long frame_count;
 
 /* camminata */
@@ -92,7 +93,6 @@ extern int slot_used[SAVE_SLOTS], slot_len[SAVE_SLOTS];
 #define MENU_BTN_X  458
 #define CHOICE_Y(i) (258 + (i) * 16)
 #define TITLE_Y(i)  (262 + (i) * 19)
-#define MAP_Y       30
 
 /* finestre in stile Macintosh */
 typedef struct { short x, y, w, h; } WinRect;
