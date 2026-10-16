@@ -21,6 +21,8 @@
 #include <LowMem.h>
 #include <Sound.h>
 #include <Devices.h>
+#include <AppleEvents.h>
+#include <Gestalt.h>
 
 #include "../game.h"
 #include "../gfx.h"
@@ -36,6 +38,7 @@ static short saved_mbar_height;
 static RgnHandle saved_gray;
 static MenuHandle apple_menu, file_menu;
 static int has_wne;
+static CursHandle game_cursor;
 
 enum { M_APPLE = 128, M_FILE = 129 };
 enum { I_ABOUT = 1 };
@@ -201,11 +204,56 @@ static void do_menu(long choice)
 
 #define TRAP_WAITNEXTEVENT  0xA860
 #define TRAP_UNIMPLEMENTED  0xA89F
+#define TRAP_GESTALT        0xA1AD
 
 static int trap_available(unsigned short trap)
 {
     return NGetTrapAddress(trap, kToolboxTrapType) !=
            NGetTrapAddress(TRAP_UNIMPLEMENTED, kToolboxTrapType);
+}
+
+/* Apple Events (System 7). Il Finder chiede di chiudere le applicazioni
+   con un evento "quit" (per esempio con Spegni o Riavvia); senza questo,
+   su un Mac da 512x342, dove la barra dei menu e' nascosta e non ci sono
+   menu, il Finder non saprebbe come far uscire il gioco. */
+static int has_ae;
+
+static pascal OSErr ae_quit(const AppleEvent *e, AppleEvent *reply, long refcon)
+{
+    (void)e; (void)reply; (void)refcon;
+    game_key('q', 1);
+    return noErr;
+}
+
+static pascal OSErr ae_ignore(const AppleEvent *e, AppleEvent *reply, long refcon)
+{
+    (void)e; (void)reply; (void)refcon;
+    return noErr;                       /* apertura: non c'e' nulla da fare */
+}
+
+static pascal OSErr ae_print(const AppleEvent *e, AppleEvent *reply, long refcon)
+{
+    (void)e; (void)reply; (void)refcon;
+    return errAEEventNotHandled;        /* niente da stampare */
+}
+
+static void init_apple_events(void)
+{
+    long resp;
+    /* Gestalt esiste da System 6.0.4: prima si controlla che la trap ci sia */
+    if (NGetTrapAddress(TRAP_GESTALT, kOSTrapType) ==
+        NGetTrapAddress(TRAP_UNIMPLEMENTED, kToolboxTrapType)) return;
+    if (Gestalt(gestaltAppleEventsAttr, &resp) != noErr ||
+        !(resp & 1L)) return;            /* bit 0: gestaltAppleEventsPresent */
+    has_ae = 1;
+    AEInstallEventHandler(kCoreEventClass, kAEOpenApplication,
+                          NewAEEventHandlerUPP(ae_ignore), 0, false);
+    AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments,
+                          NewAEEventHandlerUPP(ae_ignore), 0, false);
+    AEInstallEventHandler(kCoreEventClass, kAEPrintDocuments,
+                          NewAEEventHandlerUPP(ae_print), 0, false);
+    AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
+                          NewAEEventHandlerUPP(ae_quit), 0, false);
 }
 
 static void init_toolbox(void)
@@ -222,6 +270,15 @@ static void init_toolbox(void)
     FlushEvents(everyEvent, 0);
     InitCursor();
     has_wne = trap_available(TRAP_WAITNEXTEVENT);
+    init_apple_events();
+}
+
+/* il mirino; le altre applicazioni possono averlo cambiato mentre
+   eravamo in secondo piano, quindi si rimette al ritorno */
+static void set_game_cursor(void)
+{
+    if (game_cursor) SetCursor(*game_cursor);
+    else InitCursor();
 }
 
 static void make_window(void)
@@ -250,10 +307,8 @@ static void make_window(void)
     off_bits.rowBytes = FB_RB;
     SetRect(&off_bits.bounds, 0, 0, FB_W, FB_H);
 
-    {
-        CursHandle ch = GetCursor(crossCursor);
-        if (ch) SetCursor(*ch);
-    }
+    game_cursor = GetCursor(crossCursor);
+    set_game_cursor();
 }
 
 static void handle_key(EventRecord *ev)
@@ -327,6 +382,22 @@ int main(void)
                     EndUpdate(win);
                 }
                 break;
+            case diskEvt:
+                /* dischetto non leggibile: si propone di inizializzarlo
+                   (con System 6 senza MultiFinder lo deve fare l'applicazione) */
+                if ((ev.message >> 16) != noErr) {
+                    Point pt;
+                    pt.h = 112;
+                    pt.v = 80;
+                    DILoad();
+                    DIBadMount(pt, ev.message);
+                    DIUnload();
+                    plat_present(0, 0, FB_W, FB_H);
+                }
+                break;
+            case kHighLevelEvent:
+                if (has_ae) AEProcessAppleEvent(&ev);
+                break;
             case osEvt:
                 if (((ev.message >> 24) & 0xFF) == 0x01) {        /* suspend/resume */
                     if (ev.message & 1) {
@@ -334,6 +405,7 @@ int main(void)
                         suspended = 0;
                         if (hide_when_active) hide_menu_bar();
                         SelectWindow(win);
+                        set_game_cursor();
                         plat_present(0, 0, FB_W, FB_H);
                         last = TickCount();
                     } else {

@@ -114,7 +114,10 @@ Su uno schermo 512 × 342 la barra dei menu viene nascosta solo mentre il
 gioco è in primo piano: passando a un'altra applicazione (MultiFinder,
 System 7) ricompare e il gioco va in pausa. Viene ripristinata anche se il
 gioco viene chiuso in modo anomalo (Mela-Opzione-Esc). Quando non ha nulla
-da fare, il gioco lascia il processore alle altre applicazioni.
+da fare, il gioco lascia il processore alle altre applicazioni. Con System 7
+risponde agli Apple Events di base: Spegni e Riavvia dal Finder lo chiudono
+anche quando la barra dei menu è nascosta. Un dischetto non leggibile
+inserito durante il gioco fa comparire la proposta di inizializzarlo.
 
 ## Compilare per Macintosh
 

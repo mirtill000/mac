@@ -12,7 +12,7 @@ resource 'SIZE' (-1) {
 	dontGetFrontClicks,
 	ignoreChildDiedEvents,
 	is32BitCompatible,
-	notHighLevelEventAware,
+	isHighLevelEventAware,	/* riceve "quit" dal Finder (System 7) */
 	onlyLocalHLEvents,
 	notStationeryAware,
 	dontUseTextEditServices,
