@@ -84,67 +84,86 @@ def _boot(d, x, y, fill, cuff):
     d.line([(x - 4, y - 8), (x + 4, y - 8)], fill=cuff)
 
 
+def _hand(d, x, y, r=2.2):
+    d.ellipse((x - r, y - r, x + r, y + r), fill=Wt, outline=K)
+
+
 def frame(h, legs=(0, 0, 0, 0), arms=(0, 0), bob=0, mouth=False, hat=False, blink=False):
-    """legs = (coscia_dietro, stinco_dietro, coscia_avanti, stinco_avanti)."""
+    """legs = (coscia_dietro, stinco_dietro, coscia_avanti, stinco_avanti).
+
+    Look: capelli corti scuri e mossi con le tempie brizzolate, occhiali dalla
+    montatura scura, barba corta sale e pepe, sorriso, giacca blu (retino
+    scuro) sopra la camicia bianca aperta, pantaloni e scarpe scuri."""
     w, h = size_for(h)
     im = Image.new("L", (w, h), T)
     d = _Pen(ImageDraw.Draw(im), w, h)
     oy = bob
-    hipy = 56 + oy
+    hipy = 57 + oy
 
     # gamba e braccio posteriori (in ombra)
     ex, ey, _, _ = _limb(d, 18, hipy, legs[0], legs[1], 18, 15, 8, 7, DG)
-    _boot(d, ex, min(ey, 96), DG, LG)
-    _limb(d, 17, 31 + oy, -arms[0], -arms[0] * 0.6 - 8, 12, 11, 6, 5, LG)
+    _boot(d, ex, min(ey, 96), DG, DG)
+    hx, hy, _, _ = _limb(d, 17, 31 + oy, -arms[0], -arms[0] * 0.6 - 8, 12, 11, 6, 5, K)
+    _hand(d, hx, hy)
 
-    # busto: camicia bianca con ombra sulla schiena e sotto il braccio
-    d.polygon([(12, 29 + oy), (27, 29 + oy), (29, 43 + oy), (27, 56 + oy), (13, 56 + oy), (11, 43 + oy)],
-              fill=Wt, outline=K)
-    d.polygon([(12, 31 + oy), (14, 31 + oy), (14, 54 + oy), (13, 54 + oy), (11, 43 + oy)], fill=LG, outline=None)
-    d.polygon([(21, 47 + oy), (27, 47 + oy), (27, 52 + oy), (21, 52 + oy)], fill=LG, outline=None)
-    d.line([(17, 29 + oy), (20, 36 + oy), (23, 29 + oy)], fill=K)
-    d.polygon([(18, 30 + oy), (20, 35 + oy), (22, 30 + oy)], fill=LG, outline=None)   # petto
-    # cintura con fibbia
-    d.rectangle((12, 53 + oy, 27, 57 + oy), fill=K)
-    d.rectangle((20, 54 + oy, 22, 56 + oy), fill=Wt)
+    # giacca blu (retino scuro) con la camicia bianca che si vede davanti
+    d.polygon([(11, 29 + oy), (28, 29 + oy), (30, 44 + oy), (29, 60 + oy), (12, 60 + oy), (10, 44 + oy)],
+              fill=DG, outline=K)
+    d.polygon([(21, 29 + oy), (28, 29 + oy), (29, 37 + oy), (26, 50 + oy), (22, 40 + oy)],
+              fill=Wt, outline=K)                                          # camicia
+    d.line([(22, 29 + oy), (24, 37 + oy), (23, 44 + oy)], fill=K)          # bavero
+    d.line([(21, 31 + oy), (21, 56 + oy)], fill=K)                         # profilo della giacca
+    d.rectangle((24, 50 + oy, 25, 51 + oy), fill=K)                        # bottone
+    d.line([(14, 44 + oy), (19, 44 + oy)], fill=K)                         # tasca
 
-    # gamba anteriore (pantaloni neri con riflesso)
+    # gamba anteriore (pantaloni scuri)
     ex, ey, kx, ky = _limb(d, 22, hipy, legs[2], legs[3], 18, 15, 8, 7, K)
-    _boot(d, ex, min(ey, 96), K, Wt)
+    _boot(d, ex, min(ey, 96), K, K)
 
-    # collo e testa
-    d.rectangle((18, 24 + oy, 22, 30 + oy), fill=LG, outline=K)
-    d.ellipse((13, 6 + oy, 29, 27 + oy), fill=Wt, outline=K)
-    d.polygon([(28, 14 + oy), (31, 19 + oy), (28, 20 + oy)], fill=Wt, outline=K)       # naso
-    d.polygon([(17, 20 + oy), (21, 25 + oy), (25, 26 + oy), (19, 26 + oy)], fill=LG, outline=None)  # mento
-    # capelli lunghi: chiari davanti, scuri dietro
-    d.polygon([(12, 13 + oy), (14, 5 + oy), (20, 2 + oy), (27, 3 + oy), (30, 8 + oy),
-               (29, 10 + oy), (25, 8 + oy), (21, 10 + oy), (18, 16 + oy), (18, 26 + oy),
-               (16, 34 + oy), (11, 35 + oy), (9, 27 + oy)], fill=MG, outline=K)
-    d.polygon([(12, 14 + oy), (15, 14 + oy), (14, 33 + oy), (11, 34 + oy), (9, 27 + oy)], fill=DG, outline=None)
-    d.line([(15, 9 + oy), (13, 26 + oy)], fill=K)
-    d.line([(21, 4 + oy), (27, 5 + oy)], fill=LG)
-    # occhio, sopracciglio, bocca
-    if blink:
-        d.line([(24, 14 + oy), (26, 14 + oy)], fill=K)
-    else:
-        d.rectangle((25, 13 + oy, 25, 15 + oy), fill=K)
-    d.line([(24, 11 + oy), (27, 11 + oy)], fill=K)
+    # collo con il colletto aperto della camicia
+    d.rectangle((18, 24 + oy, 23, 30 + oy), fill=Wt, outline=K)
+    d.polygon([(18, 27 + oy), (22, 31 + oy), (25, 27 + oy), (24, 32 + oy), (19, 32 + oy)], fill=Wt, outline=K)
+
+    # testa
+    d.ellipse((13, 5 + oy, 30, 27 + oy), fill=Wt, outline=K)
+    d.polygon([(29, 13 + oy), (32, 18 + oy), (29, 19 + oy)], fill=Wt, outline=K)        # naso
+    d.ellipse((15, 12 + oy, 19, 18 + oy), fill=Wt, outline=K)                          # orecchio
+    # barba corta sale e pepe: guancia, mascella e mento
+    d.polygon([(15, 17 + oy), (19, 19 + oy), (23, 20 + oy), (27, 20 + oy), (30, 20 + oy),
+               (30, 24 + oy), (27, 27 + oy), (21, 27 + oy), (16, 24 + oy)], fill=MG, outline=K)
+    # sorriso (o bocca aperta quando parla)
     if mouth:
-        d.rectangle((25, 21 + oy, 27, 23 + oy), fill=K)
+        d.polygon([(23, 20 + oy), (30, 20 + oy), (29, 25 + oy), (25, 25 + oy)], fill=K, outline=K)
+        d.line([(24, 21 + oy), (29, 21 + oy)], fill=Wt)                                # denti
     else:
-        d.line([(25, 22 + oy), (27, 22 + oy)], fill=K)
+        # sorriso largo con i denti in vista
+        d.polygon([(23, 20 + oy), (30, 20 + oy), (28, 23 + oy), (25, 23 + oy)], fill=Wt, outline=K)
+    d.line([(23, 19 + oy), (30, 19 + oy)], fill=K)                                     # baffi
+    # capelli corti, scuri e mossi, tempie grigie
+    d.polygon([(13, 15 + oy), (12, 9 + oy), (14, 5 + oy), (18, 2 + oy), (23, 1 + oy), (28, 2 + oy),
+               (30, 5 + oy), (29, 9 + oy), (27, 8 + oy), (24, 9 + oy), (20, 9 + oy), (18, 12 + oy),
+               (16, 12 + oy), (15, 16 + oy)], fill=DG, outline=K)
+    for cx, cy in ((16, 4), (21, 2), (26, 3), (29, 6), (14, 9)):
+        d.ellipse((cx - 1.5, cy - 1 + oy, cx + 1.5, cy + 1.5 + oy), fill=K, outline=None)  # riccioli
+    d.polygon([(14, 11 + oy), (16, 11 + oy), (16, 16 + oy), (14, 16 + oy)], fill=LG, outline=None)  # tempia
+    # occhiali dalla montatura scura
+    d.rectangle((23, 11 + oy, 29, 16 + oy), fill=Wt, outline=K)
+    d.line([(23, 12 + oy), (18, 13 + oy)], fill=K)                                     # stanghetta
+    if blink:
+        d.line([(25, 14 + oy), (27, 14 + oy)], fill=K)
+    else:
+        d.rectangle((26, 13 + oy, 26, 14 + oy), fill=K)
+    d.line([(23, 10 + oy), (28, 9 + oy)], fill=K)                                      # sopracciglio
     if hat:
         # cappello da pirata (tricorno)
-        d.polygon([(14, 9 + oy), (15, 1 + oy), (21, 0 + oy), (28, 1 + oy), (29, 9 + oy)], fill=K, outline=K)
-        d.polygon([(8, 7 + oy), (21, 11 + oy), (35, 7 + oy), (33, 12 + oy), (21, 14 + oy), (10, 12 + oy)],
+        d.polygon([(14, 8 + oy), (15, 0 + oy), (21, -1 + oy), (28, 0 + oy), (29, 8 + oy)], fill=K, outline=K)
+        d.polygon([(8, 6 + oy), (21, 10 + oy), (35, 6 + oy), (33, 11 + oy), (21, 13 + oy), (10, 11 + oy)],
                   fill=K, outline=K)
-        d.line([(10, 9 + oy), (21, 12 + oy), (33, 9 + oy)], fill=Wt)
-        d.rectangle((21, 4 + oy, 22, 5 + oy), fill=Wt)
-    # braccio anteriore (manica bianca ombreggiata)
-    _limb(d, 23, 32 + oy, arms[1], arms[1] * 0.6 + 6, 12, 11, 7, 6, Wt, shade=LG)
-    d.line([(23 + math.sin(math.radians(arms[1])) * 9 - 3, 32 + oy + 9),
-            (23 + math.sin(math.radians(arms[1])) * 9 + 3, 32 + oy + 9)], fill=K)
+        d.line([(10, 8 + oy), (21, 11 + oy), (33, 8 + oy)], fill=Wt)
+        d.rectangle((21, 3 + oy, 22, 4 + oy), fill=Wt)
+    # braccio anteriore: manica della giacca e mano
+    hx, hy, _, _ = _limb(d, 23, 32 + oy, arms[1], arms[1] * 0.6 + 6, 12, 11, 7, 6, DG)
+    _hand(d, hx, hy)
     return np.array(im)
 
 
