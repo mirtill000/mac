@@ -13,17 +13,26 @@
 #include "../engine.h"
 #include "../gfx.h"
 #include "../platform.h"
+#include "../core.h"      /* per i test dei singoli moduli */
 
 static const char *outdir = ".";
-static unsigned char saves[8][64];
+static unsigned char saves[8][128];
 static int saved[8];
 static int failures;
 
 void plat_present(int x0, int y0, int x1, int y1) { (void)x0; (void)y0; (void)x1; (void)y1; }
-int plat_save(int slot, const unsigned char *d, int len) { memcpy(saves[slot], d, len); saved[slot] = 1; return 0; }
-int plat_load(int slot, unsigned char *d, int len) { if (!saved[slot]) return -1; memcpy(d, saves[slot], len); return 0; }
+int plat_save(int slot, const unsigned char *d, int len) { memcpy(saves[slot], d, len); saved[slot] = len; return 0; }
+int plat_load(int slot, unsigned char *d, int maxlen)
+{
+    int n = saved[slot] < maxlen ? saved[slot] : maxlen;
+    if (!saved[slot]) return -1;
+    memcpy(d, saves[slot], n);
+    return n;
+}
 void plat_datetime(int *d, int *mo, int *y, int *h, int *mi) { *d = 16; *mo = 10; *y = 2026; *h = 14; *mi = 32; }
 void plat_beep(void) {}
+static unsigned long fake_ticks;
+unsigned long plat_ticks(void) { return fake_ticks; }
 
 static void shot(const char *name)
 {
@@ -60,7 +69,7 @@ static void check_render(void)
 
 static void frames(int n)
 {
-    while (n-- > 0) { game_tick(); game_render(); check_render(); }
+    while (n-- > 0) { fake_ticks += TICKS_PER_FRAME; game_tick(); game_render(); check_render(); }
 }
 
 static void click(int x, int y)
@@ -95,9 +104,9 @@ static void settle_skip(void)
 #define CHECK(cond, what) do { if (cond) printf("  ok   %s\n", what); \
     else { printf("  FAIL %s\n", what); failures++; } } while (0)
 
-#define VERB_X(i) (16 + ((i) / 3) * 88 + 10)
-#define VERB_Y(i) (263 + ((i) % 3) * 24 + 6)
-static void verb(int v) { click(VERB_X(v), VERB_Y(v)); }
+#define TVERB_X(i) (VERB_X(i) + 10)
+#define TVERB_Y(i) (VERB_Y(i) + 6)
+static void verb(int v) { click(TVERB_X(v), TVERB_Y(v)); }
 
 static void inv_click(int item)
 {
@@ -124,6 +133,153 @@ static void travel(int place)
     frames(2);
     click(map_places[place].x + map_places[place].w / 2, 30 + map_places[place].y + map_places[place].h / 2);
     settle_skip();
+}
+
+/* ---- grafica: niente scritture fuori dall'area di clipping ---- */
+static void test_clipping(void)
+{
+    static unsigned char before[sizeof(gfx_fb)];
+    const Sprite *sp = &asset_hero[HERO_SIZES - 1][0];
+    int x, y, bad = 0;
+    const int cx0 = 101, cy0 = 50, cx1 = 299, cy1 = 151;    /* bordi non allineati al byte */
+    printf("Clipping\n");
+    memset(gfx_fb, 0x5A, sizeof(gfx_fb));
+    memcpy(before, gfx_fb, sizeof(gfx_fb));
+    gfx_clip(cx0, cy0, cx1, cy1);
+    gfx_masked(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, cx0 - 40, cy0 - 90);
+    gfx_masked_mirror(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, cx1 - 20, cy1 - 30);
+    gfx_masked(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, -50, -60);           /* fuori schermo */
+    gfx_masked_mirror(sp->bits, sp->mask, sp->w, sp->h, sp->rowBytes, FB_W - 10, FB_H - 10);
+    gfx_text(cx1 - 30, cy0 - 5, "Bordo àèìòù", FONT_BOLD, COL_BLACK);
+    gfx_text(-20, cy1 - 7, "Fuori", FONT_REGULAR, COL_WHITE);
+    gfx_fill(cx0 - 20, cy0 - 20, 400, 400, PAT_GRAY);
+    gfx_line(-100, -100, 600, 400, COL_BLACK);
+    gfx_shadow(cx0, cy1, 30, 4);
+    gfx_noclip();
+    for (y = 0; y < FB_H; y++)
+        for (x = 0; x < FB_W; x++) {
+            int inside = x >= cx0 && x < cx1 && y >= cy0 && y < cy1;
+            int bit = 0x80 >> (x & 7);
+            if (!inside && ((gfx_fb[y * FB_RB + (x >> 3)] ^ before[y * FB_RB + (x >> 3)]) & bit)) bad++;
+        }
+    CHECK(bad == 0, "nessun pixel modificato fuori dall'area di clipping");
+    game_debug(DBG_REDRAW, 0);
+    frames(2);
+}
+
+/* ---- salvataggi: file alterati, troncati e vecchio formato ---- */
+static void test_saves(void)
+{
+    unsigned char d[SAVE_LEN];
+    printf("Salvataggi\n");
+    serialize(d);
+    memcpy(saves[3], d, SAVE_LEN); saved[3] = SAVE_LEN;
+    saves[3][20] ^= 0x10;                               /* un bit cambiato */
+    memcpy(saves[4], d, 10); saved[4] = 10;             /* file troncato */
+    /* vecchio formato PPS1: spiaggia, cappello in testa, moneta e mappa */
+    memset(saves[5], 0, 64);
+    memcpy(saves[5], "PPS1", 4);
+    saves[5][4] = ROOM_BEACH; saves[5][5] = 1;
+    saves[5][6] = 0; saves[5][7] = 120; saves[5][8] = 0; saves[5][9] = 220;
+    saves[5][13] = (unsigned char)(1 << F_HAT_WORN);
+    saves[5][14] = 2; saves[5][15] = IT_MONETA; saves[5][16] = IT_MAPPA;
+    saved[5] = 64;
+    memcpy(saves[6], d, SAVE_LEN); saved[6] = SAVE_LEN;
+    refresh_slots();
+    CHECK(!slot_used[3], "salvataggio alterato rifiutato");
+    CHECK(!slot_used[4], "salvataggio troncato rifiutato");
+    CHECK(slot_used[5] && slot_used[6], "salvataggi validi riconosciuti (PPS1 e PPS2)");
+    do_load(5);
+    CHECK(G.room == ROOM_BEACH && flag(F_HAT_WORN) && has_item(IT_MAPPA) && G.ninv == 2,
+          "il vecchio formato PPS1 si carica");
+    serialize(d);
+    CHECK(d[3] == '2' && save_info(d, SAVE_LEN, &(SaveInfo){0}) == 2, "si salva nel formato PPS2");
+    frames(2);
+}
+
+/* ---- testi lunghi: spezzati in piu' box, niente troncato ---- */
+static void test_long_text(void)
+{
+    static const char *lungo =
+        "Questa è una frase molto lunga, scritta apposta per il test: deve essere spezzata "
+        "in più riquadri consecutivi senza perdere neanche una parola, perché prima o poi "
+        "qualcuno scriverà un dialogo più lungo del previsto e non vogliamo che il gioco "
+        "tagli il testo a metà come se niente fosse. Ecco ancora qualche parola per "
+        "superare abbondantemente le quattro righe di un solo riquadro: pollo, grog, "
+        "cappello, piuma, Codice dei Pirati, Capitan Barbapollo e il Custode di Puerto Polli.";
+    int i, chars = 0, boxes, ok = 1;
+    printf("Testi lunghi\n");
+    clear_interaction();
+    say(SP_HERO, lungo);
+    boxes = msg_count;
+    for (i = 0; i < msg_count; i++) {
+        const Msg *m = &msgs[(msg_head + i) % MSG_MAX];
+        GRect r = msg_box_rect(m);
+        chars += m->nchar;
+        if (r.y1 - r.y0 > 10 + MSG_LINES * FONT_H + 8) ok = 0;
+    }
+    CHECK(boxes > 1, "il testo lungo e' diviso in piu' riquadri");
+    CHECK(ok, "nessun riquadro supera le righe previste");
+    /* tra un riquadro e il successivo si perde solo lo spazio dell'a-capo */
+    CHECK(chars >= gfx_text_len(lungo) - (boxes - 1) && chars <= gfx_text_len(lungo),
+          "tutti i caratteri sono mostrati");
+    clear_interaction();
+    frames(2);
+}
+
+/* ---- punti di arrivo e ingressi dentro le zone calpestabili ---- */
+static void test_walk_points(void)
+{
+    int i, bad = 0, r, saved_room = G.room;
+    printf("Zone calpestabili\n");
+    for (i = 0; i < hotspot_count; i++) {
+        const Hotspot *h = &hotspots[i];
+        if (h->wx < 0) continue;
+        G.room = (unsigned char)h->room;
+        if (!walkable(h->wx, h->wy)) {
+            printf("       punto di arrivo fuori: %s (%d,%d)\n", h->name, h->wx, h->wy);
+            bad++;
+        }
+    }
+    CHECK(bad == 0, "tutti i punti di arrivo sono calpestabili");
+    bad = 0;
+    for (r = 0; r < ROOM_COUNT; r++) {
+        go_room(r);
+        if (!walkable(G.hx, G.hy)) bad++;
+    }
+    CHECK(bad == 0, "tutti gli ingressi delle stanze sono calpestabili");
+    clear_interaction();
+    go_room(saved_room);
+    clear_interaction();
+    frames(2);
+}
+
+/* ---- prospettiva: nessun cambio di misura avanti e indietro ---- */
+static void test_perspective(void)
+{
+    int y, changes = 0, last;
+    printf("Prospettiva\n");
+    go_room(ROOM_DOCK);
+    clear_interaction();
+    G.hy = 200;
+    last = hero_size();
+    for (y = 200; y <= 236; y++) {                  /* avanti... */
+        G.hy = (short)y;
+        if (hero_size() != last) { changes++; last = hero_size(); }
+    }
+    for (y = 236; y >= 200; y--) {                  /* ...e indietro */
+        G.hy = (short)y;
+        if (hero_size() != last) { changes++; last = hero_size(); }
+    }
+    CHECK(changes == 2, "un solo cambio di misura per verso");
+    changes = 0;
+    for (y = 0; y < 40; y++) {                      /* fermo sulla soglia */
+        G.hy = (short)(212 + (y & 1));
+        if (hero_size() != last) { changes++; last = hero_size(); }
+    }
+    CHECK(changes <= 1, "sulla soglia la misura non pulsa");
+    clear_interaction();
+    frames(2);
 }
 
 int main(int argc, char **argv)
@@ -314,6 +470,15 @@ int main(int argc, char **argv)
     frames(2);
     CHECK(game_debug(DBG_MODAL, 0) == 1, "menu di pausa");
     shot("15_menu");
+
+    printf("Coda dei messaggi\n");
+    CHECK(msg_overflow == 0, "nessun messaggio perso durante l'avventura");
+
+    test_clipping();
+    test_saves();
+    test_long_text();
+    test_walk_points();
+    test_perspective();
 
     printf("\n%s (%d errori)\n", failures ? "TEST FALLITO" : "TUTTO OK", failures);
     return failures ? 1 : 0;

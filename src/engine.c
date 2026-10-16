@@ -62,7 +62,7 @@ int anim_nrects;
 int blink_timer = 60, blinking;
 
 unsigned char slot_data[SAVE_SLOTS][SAVE_LEN];
-int slot_used[SAVE_SLOTS];
+int slot_used[SAVE_SLOTS], slot_len[SAVE_SLOTS];
 
 /* ------------------------------------------------------------------ */
 /* Rendering                                                           */
@@ -93,8 +93,14 @@ void rebuild_background(void)
 }
 
 /* misura del protagonista secondo la profondita' (prospettiva) */
+/* Misura del protagonista secondo la profondita' (prospettiva).
+   Con isteresi: si cambia misura solo quando la nuova e' chiaramente piu'
+   adatta, cosi' camminando su una soglia non "pulsa" avanti e indietro. */
+#define SIZE_HYSTERESIS 4
+
 int hero_size(void)
 {
+    static int last = -1, last_room = -1;
     const RoomDepth *d = &room_depth[G.room];
     int h, i, best = 0;
     if (d->y_near == d->y_far) h = d->h_near;
@@ -103,6 +109,14 @@ int hero_size(void)
         int a = asset_hero_height[i] - h, b = asset_hero_height[best] - h;
         if ((a < 0 ? -a : a) < (b < 0 ? -b : b)) best = i;
     }
+    if (last >= 0 && last_room == G.room && best != last) {
+        int dl = asset_hero_height[last] - h, db = asset_hero_height[best] - h;
+        if (dl < 0) dl = -dl;
+        if (db < 0) db = -db;
+        if (dl - db < SIZE_HYSTERESIS) best = last;
+    }
+    last = best;
+    last_room = G.room;
     return best;
 }
 
@@ -225,6 +239,42 @@ void update_play_overlays(void)
     }
 }
 
+/* Strumento di calibrazione (Mela-D / Ctrl-D): mostra sulla scena le
+   aree cliccabili, le zone calpestabili, le zone animate e il protagonista. */
+static void draw_debug_overlay(void)
+{
+    const WalkArea *w = &walk_areas[G.room];
+    GRect hr = hero_rect();
+    int i, k;
+    gfx_clip(0, 0, FB_W, SCENE_H);
+    for (i = 0; i < hotspot_count; i++) {
+        const Hotspot *h = &hotspots[i];
+        if (h->room != G.room || !hotspot_visible(h->id)) continue;
+        gfx_frame(h->x, h->y, h->w, h->h, COL_BLACK);
+        gfx_frame(h->x + 1, h->y + 1, h->w - 2, h->h - 2, COL_WHITE);
+        gfx_text_outline(h->x + 3, h->y + 2, h->name, FONT_REGULAR, COL_WHITE);
+        if (h->wx >= 0) {                       /* punto di arrivo */
+            gfx_fill(h->wx - 2, h->wy - 2, 5, 5, PAT_BLACK);
+            gfx_fill(h->wx - 1, h->wy - 1, 3, 3, PAT_WHITE);
+        }
+    }
+    for (i = 0; i < w->npoly; i++) {           /* zone calpestabili */
+        const WalkPoly *p = &w->poly[i];
+        for (k = 0; k < p->n; k++) {
+            int j = (k + 1) % p->n;
+            gfx_line(p->x[k], p->y[k], p->x[j], p->y[j], COL_WHITE);
+            gfx_line(p->x[k], p->y[k] + 1, p->x[j], p->y[j] + 1, COL_BLACK);
+        }
+    }
+    for (i = 0; i < anim_count; i++) {         /* animazioni e bocche */
+        const Anim *a = &anims[i];
+        if (a->scene != G.room) continue;
+        gfx_frame(a->x0, a->y0, a->x1 - a->x0, a->y1 - a->y0, COL_WHITE);
+    }
+    gfx_frame(hr.x0, hr.y0, hr.x1 - hr.x0, hr.y1 - hr.y0, COL_BLACK);
+    gfx_noclip();
+}
+
 void render_full(void)
 {
     if (need_rebuild) rebuild_background();
@@ -246,6 +296,7 @@ void render_full(void)
         memcpy(gfx_fb, bgbuf, SCENE_H * FB_RB);
         gfx_dirty(0, 0, FB_W, SCENE_H);
         draw_play_overlays();
+        if (debug_overlay) draw_debug_overlay();
         draw_panel();
         panel_dirty = 0;
         break;
@@ -254,10 +305,19 @@ void render_full(void)
     gfx_dirty_all();
 }
 
+/* contatore delle prestazioni (Mela-F / Ctrl-F) */
+int perf_on, perf_fps, perf_peak_ms;
+int debug_overlay;
+static int perf_frames, perf_peak;
+static unsigned long perf_t0;
+
 void game_render(void)
 {
     GRect r;
+    unsigned long t_start = perf_on ? plat_ticks() : 0;
+    int presented = 0;
     if (need_rebuild) { rebuild_background(); need_full = 1; }
+    if (debug_overlay && mode == MODE_PLAY && modal == MODAL_NONE) need_full = 1;   /* sempre tutto */
     if (need_full || modal != MODAL_NONE || mode != MODE_PLAY) {
         /* le finestre e le schermate fisse si ridisegnano solo se serve */
         if (need_full) render_full();
@@ -281,7 +341,22 @@ void game_render(void)
         anim_nrects = 0;
         if (mode == MODE_TITLE && menu) draw_title_menu();
     }
-    while (gfx_take_dirty(&r)) plat_present(r.x0, r.y0, r.x1, r.y1);
+    while (gfx_take_dirty(&r)) { plat_present(r.x0, r.y0, r.x1, r.y1); presented = 1; }
+
+    if (perf_on) {
+        unsigned long now = plat_ticks();
+        int dt = (int)(now - t_start);
+        if (presented) perf_frames++;
+        if (dt > perf_peak) perf_peak = dt;
+        if (now - perf_t0 >= 60) {
+            perf_fps = (int)(perf_frames * 60L / (long)(now - perf_t0));
+            perf_peak_ms = perf_peak * 1000 / 60;
+            perf_frames = 0;
+            perf_peak = 0;
+            perf_t0 = now;
+            sentence_dirty = 1;           /* i numeri stanno nella riga della frase */
+        }
+    }
 }
 
 
@@ -470,6 +545,18 @@ void game_key(int ch, int command)
 {
     if (command) {
         if (ch == 'q' || ch == 'Q') { quit_requested = 1; return; }
+        if (ch == 'f' || ch == 'F') {           /* contatore delle prestazioni */
+            perf_on = !perf_on;
+            perf_t0 = plat_ticks();
+            perf_fps = perf_peak_ms = 0;
+            need_full = 1;
+            return;
+        }
+        if (ch == 'd' || ch == 'D') {           /* aree cliccabili e zone calpestabili */
+            debug_overlay = !debug_overlay;
+            need_full = 1;
+            return;
+        }
         if (mode == MODE_PLAY && (ch == 's' || ch == 'S')) { modal_from_title = 0; open_modal(MODAL_SAVE); return; }
         if (ch == 'l' || ch == 'L' || ch == 'o' || ch == 'O') {
             modal_from_title = mode != MODE_PLAY;
@@ -538,10 +625,7 @@ void game_tick(void)
         int speaker = -1, n, i;
         Msg *m = cur_msg();
         if (m && m->text) {
-            int nl;
-            const char *starts[MAX_LINES];
-            int lens[MAX_LINES];
-            box = msg_box_rect(m, &nl, starts, lens);
+            box = msg_box_rect(m);
             avoid = &box;
             speaker = m->speaker;
         }

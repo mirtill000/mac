@@ -67,6 +67,15 @@ void draw_sentence(void)
     gfx_frame(MENU_BTN_X, SENTENCE_Y + 1, 48, 13, COL_WHITE);
     gfx_text(MENU_BTN_X + 10, SENTENCE_Y, "Menu", FONT_REGULAR, COL_WHITE);
     if (hover_menu == 0) gfx_invert(MENU_BTN_X + 1, SENTENCE_Y + 2, 46, 11);
+    if (perf_on) {
+        char perf[32];
+        perf[0] = 0;
+        num_cat(perf, perf_fps, 2, sizeof(perf));
+        str_cat(perf, " fps  max ", sizeof(perf));
+        num_cat(perf, perf_peak_ms, 3, sizeof(perf));
+        str_cat(perf, " ms", sizeof(perf));
+        gfx_text(4, SENTENCE_Y, perf, FONT_REGULAR, COL_WHITE);
+    }
     sentence_dirty = 0;
 }
 

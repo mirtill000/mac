@@ -38,6 +38,7 @@ il Mozzo Pino, e supera le tre prove del Custode.
 | Menu (salva, carica, opzioni, inventario) | pulsante **Menu** o Esc |
 | Inventario a finestra | Tab o I |
 | Scorciatoie | ⌘S salva, ⌘L carica, ⌘Q esci (Ctrl sul PC) |
+| Strumenti di sviluppo | ⌘F contatore delle prestazioni (fotogrammi al secondo e tempo massimo di un fotogramma), ⌘D mostra aree cliccabili, punti di arrivo, zone calpestabili e zone animate |
 
 Senza verbo selezionato, il clic su un oggetto dell'inventario lo esamina
 (e sulla mappa la apre).
@@ -77,7 +78,15 @@ salvataggio su disco funzionano.
   menu e usa tutto lo schermo; su schermi più grandi la finestra è centrata.
 
 I salvataggi (8 posizioni) sono file `Puerto Polli Salvataggio N` nella
-cartella del gioco.
+cartella del gioco, nel formato `PPS2` (96 byte: versione, 128 flag della
+storia, somma di controllo). Un file alterato o troncato viene rifiutato;
+i salvataggi del vecchio formato `PPS1` si caricano ancora.
+
+Su uno schermo 512 × 342 la barra dei menu viene nascosta solo mentre il
+gioco è in primo piano: passando a un'altra applicazione (MultiFinder,
+System 7) ricompare e il gioco va in pausa. Viene ripristinata anche se il
+gioco viene chiuso in modo anomalo (Mela-Opzione-Esc). Quando non ha nulla
+da fare, il gioco lascia il processore alle altre applicazioni.
 
 ## Compilare per Macintosh
 
@@ -116,14 +125,24 @@ ctest                    # test automatico: gioca tutta l'avventura
 
 Il test (`src/test/main_test.c`) completa l'avventura simulando i clic,
 verifica ogni passaggio della soluzione e salva/carica una partita; può anche
-salvare schermate in formato PBM.
+salvare schermate in formato PBM. Controlla inoltre a ogni fotogramma che il
+ridisegno parziale coincida con quello completo, e verifica: niente pixel
+scritti fuori dall'area di ritaglio, salvataggi alterati/troncati rifiutati e
+vecchi salvataggi caricati, testi lunghi divisi senza perdite, punti di arrivo
+e ingressi dentro le zone calpestabili, prospettiva senza «pulsazioni», coda
+dei messaggi mai piena.
 
 ## Struttura del codice
 
 | File | Contenuto |
 | --- | --- |
-| `src/engine.c` | motore: camminata, verbi, inventario, messaggi, dialoghi, mappa, finestre, salvataggi, rendering incrementale |
-| `src/script.c` | la storia: stanze, oggetti cliccabili, testi, enigmi, dialoghi |
+| `src/engine.c` | stato del gioco, rendering incrementale, protagonista, input, ciclo principale, strumenti di sviluppo |
+| `src/msg.c` | servizi per la storia (battute, oggetti, flag, stanze), coda dei messaggi, riquadri dei dialoghi |
+| `src/walk.c` | zone calpestabili (poligoni), aree cliccabili, verbi e azioni |
+| `src/save.c` | salvataggi (formato `PPS2`, compatibilità con `PPS1`) |
+| `src/ui.c` | pannello dei verbi e dell'inventario, finestre in stile Macintosh, titolo, mappa, finale |
+| `src/core.h` | stato e funzioni condivise tra i moduli del motore |
+| `src/script.c` | la storia: stanze, oggetti cliccabili, zone calpestabili, prospettiva, animazioni, dialoghi e la **tabella delle regole** (`rules`): verbi + oggetto + condizioni → battute ed effetti |
 | `src/anim.c` | animazioni degli sfondi: onde, oscillazioni, respiro dei personaggi, lanterna, stelle, gabbiani |
 | `src/gfx.c` | grafica 1-bit su framebuffer in formato BitMap QuickDraw (512×342, 64 byte per riga) |
 | `src/assets.c` | **generato**: sfondi compressi PackBits, icone, sprite, font |
@@ -141,6 +160,20 @@ video con più `CopyBits` piccoli invece di uno grande. Le animazioni
 lavorano su una copia dello sfondo, così il protagonista ci passa davanti
 senza sfarfallii; le zone animate sono elencate in `src/script.c`
 (tabella `anims`), dove si possono aggiungere o regolare.
+
+### Aggiungere battute e oggetti
+
+Le reazioni ai verbi sono righe della tabella `rules` in `src/script.c`:
+
+```c
+{ VB(V_GUARDA), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, { {TU, "La cassa è aperta e vuota."} } },
+{ VB(V_DAI), H_OSTE, IT_MONETA, 0, 0, { {SP_OSTE, "Affare fatto!"} }, SET(F_GOT_GROG), ADD(IT_BOTTIGLIA), REM(IT_MONETA) },
+```
+
+Vince la prima regola che corrisponde, quindi le varianti con condizioni
+(`IF`, `IFNOT`, `HAS`, `HASNOT`) vanno prima di quella generica. Per i casi
+più complessi la regola può indicare una funzione (`fn`). Con ⌘D si vedono
+sulla scena le aree cliccabili e le zone calpestabili da calibrare.
 
 ### Rigenerare la grafica
 

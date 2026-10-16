@@ -14,6 +14,11 @@
 #include "assets.h"
 #include "anim.h"
 
+/* le regole elencano solo i campi che servono: gli altri valgono zero */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Dati                                                               */
 /* ------------------------------------------------------------------ */
@@ -251,11 +256,12 @@ static void custode_proofs_summary(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Azioni                                                              */
+/* Azioni speciali (usate dalla tabella delle regole)                  */
 /* ------------------------------------------------------------------ */
 
-static int open_crate(void)
+static int open_crate(int o1, int o2)
 {
+    (void)o1; (void)o2;
     if (flag(F_CRATE_OPEN)) {
         say(SP_HERO, "È già aperta. Ed è vuota.");
         return 1;
@@ -315,77 +321,240 @@ static int give_to_custode(int it)
     return 0;
 }
 
-static int give_to_barba(int it)
+static int fn_give_custode(int o1, int it) { (void)o1; return give_to_custode(it); }
+
+static int fn_mozzo_talk(int o1, int o2)
 {
-    if (!flag(F_HAT_WORN)) {
-        say(SP_BARBA, "Prima mettiti un cappello. Non faccio affari con i turisti.");
-        return 1;
+    (void)o1; (void)o2;
+    if (!flag(F_MOZZO_1)) {
+        set_flag(F_MOZZO_1);
+        say(SP_MOZZO, "Ciao! Sono Pino, il mozzo. Il capitano dice che sono il miglior mozzo che abbia mai avuto.");
+        say(SP_MOZZO, "Sono anche l'unico.");
+    } else if (!flag(F_MOZZO_2)) {
+        set_flag(F_MOZZO_2);
+        say(SP_MOZZO, "Il capitano oggi è di cattivo umore. Quando è di cattivo umore, di solito ha sete.");
+        say(SP_MOZZO, "Beve solo il grog della Taberna. Quello che fuma.");
+    } else {
+        clear_flag(F_MOZZO_1);
+        clear_flag(F_MOZZO_2);
+        say(SP_MOZZO, "Lo sai che quel gabbiano va matto per i calamari? Una volta ne ha rubato uno al capitano!");
+        say(SP_MOZZO, "Il capitano non gliel'ha mai perdonata. Da allora tiene il suo calamaro sotto chiave.");
     }
-    if (it == IT_BOTTIGLIA) {
-        remove_item(IT_BOTTIGLIA);
-        add_item(IT_CHIAVE);
-        set_flag(F_GOT_KEY);
-        say(SP_BARBA, "Il mio grog! Fumante come piace a me!");
-        say(SP_NARRATORE, "Il capitano lo beve tutto d'un fiato. Gli fumano anche le orecchie.");
-        say(SP_BARBA, "Affare fatto, mozzo. Ecco la chiave della cassa sulla spiaggia.");
-        say(SP_BARBA, "Non chiedermi perché odora di aringa.");
-        return 1;
-    }
-    if (it == IT_MONETA) {
-        say(SP_BARBA, "Una moneta? Cosa me ne faccio? Portami del grog, piuttosto!");
-        return 1;
-    }
-    say(SP_BARBA, "Non mi serve. A me serve qualcosa che fumi e che si beva.");
     return 1;
 }
 
+static int fn_open_map(int o1, int o2)   { (void)o1; (void)o2; open_map(); return 1; }
+static int fn_to_tavern(int o1, int o2)  { (void)o1; (void)o2; go_room(ROOM_TAVERN); return 1; }
+static int fn_to_dock(int o1, int o2)    { (void)o1; (void)o2; go_room(ROOM_DOCK); return 1; }
+static int fn_talk_oste(int o1, int o2)  { (void)o1; (void)o2; start_dialog(SP_OSTE); return 1; }
+static int fn_talk_barba(int o1, int o2) { (void)o1; (void)o2; start_dialog(SP_BARBA); return 1; }
+static int fn_talk_custode(int o1, int o2) { (void)o1; (void)o2; start_dialog(SP_CUSTODE); return 1; }
+
+/* ------------------------------------------------------------------ */
+/* Le regole: chi fa cosa con che cosa                                  */
+/* ------------------------------------------------------------------ */
+/*
+ * Ogni regola dice: con questi verbi, su quest'oggetto (e con questo
+ * secondo oggetto), se valgono queste condizioni, si dicono queste battute
+ * e si applicano questi effetti. Vince la PRIMA regola che corrisponde,
+ * quindi le varianti con condizioni vanno prima di quella generica.
+ * Per i casi complessi c'e' una funzione (fn) che fa tutto da sola.
+ *
+ * Convenzioni di script_action (vedi engine.h):
+ *   V_DAI: o1 = chi riceve, o2 = oggetto dato;  V_USA: o1 = oggetto, o2 = bersaglio.
+ */
+typedef struct { signed char sp; const char *text; } Line;
+typedef struct {
+    short verbs;                 /* maschera di verbi: VB(V_GUARDA) | ... */
+    short o1, o2;                /* o2: NONE, ANY_ITEM o un oggetto preciso */
+    short c1, c2;                /* condizioni: IF, IFNOT, HAS, HASNOT (0 = nessuna) */
+    Line lines[4];
+    short set;                   /* SET(flag) */
+    short add, rem;              /* ADD(oggetto), REM(oggetto) */
+    int (*fn)(int o1, int o2);
+} Rule;
+
+#define VB(v)       (1 << (v))
+#define NONE        OBJ_NONE
+#define ANY_ITEM    (-3)
+#define IF(f)       ((f) + 1)
+#define IFNOT(f)    (-((f) + 1))
+#define HAS(it)     (1000 + (it) + 1)
+#define HASNOT(it)  (-(1000 + (it) + 1))
+#define SET(f)      ((f) + 1)
+#define ADD(it)     ((it) + 1)
+#define REM(it)     ((it) + 1)
+#define TU          SP_HERO
+#define NARR        SP_NARRATORE
+#define TOCCA       (VB(V_RACCOGLI) | VB(V_SPINGI) | VB(V_TIRA))
+#define SPOSTA      (VB(V_SPINGI) | VB(V_TIRA))
+
+static const Rule rules[] = {
+    /* ---- oggetti dell'inventario ---- */
+    { VB(V_GUARDA), IT_BOTTIGLIA, NONE, 0, 0, { {TU, "Una bottiglia di grog. Fuma. Le bottiglie non dovrebbero fumare."} } },
+    { VB(V_GUARDA), IT_MONETA,    NONE, 0, 0, { {TU, "Un doblone. Tutti i miei risparmi."} } },
+    { VB(V_GUARDA), IT_CHIAVE,    NONE, 0, 0, { {TU, "Una chiave arrugginita che odora di aringa."} } },
+    { VB(V_GUARDA), IT_MAPPA,     NONE, 0, 0, { {TU, "La mappa di Puerto Polli. Se la uso posso spostarmi sull'isola."} } },
+    { VB(V_GUARDA), IT_PIUMA,     NONE, 0, 0, { {TU, "Una piuma di gabbiano. Decisamente NON di pollo."} } },
+    { VB(V_GUARDA), IT_CALAMARO,  NONE, 0, 0, { {TU, "Un calamaro essiccato. Il portafortuna del capitano. Puzza di fortuna."} } },
+    { VB(V_GUARDA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, { {TU, "Il mio cappello da pirata. Ce l'ho in testa e mi sta benissimo."} } },
+    { VB(V_GUARDA), IT_CAPPELLO,  NONE, 0, 0, { {TU, "Un cappello da pirata. Starebbe meglio sulla mia testa."} } },
+    { VB(V_GUARDA), IT_LIBRO,     NONE, 0, 0, { {TU, "\"Il Codice dei Pirati\". Articolo 1: mai fidarsi di un pollo."},
+                                                {TU, "Articolo 2: vedi articolo 1."} } },
+    { VB(V_USA), IT_MAPPA,     NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
+    { VB(V_USA), IT_CAPPELLO,  NONE, IF(F_HAT_WORN), 0, { {TU, "Ce l'ho già in testa. Toglierlo? Mai più."} } },
+    { VB(V_USA), IT_CAPPELLO,  NONE, 0, 0, { {TU, "Me lo metto in testa. Mi sento già più pirata. E un po' umido."} }, SET(F_HAT_WORN) },
+    { VB(V_USA), IT_BOTTIGLIA, NONE, 0, 0, { {TU, "Berlo io? Fuma! Neanche morto. Beh, forse da morto."} } },
+    { VB(V_USA), IT_LIBRO,     NONE, 0, 0, { {TU, "Leggo a caso: \"Articolo 14: il grog va bevuto, non annusato.\" Profondo."} } },
+    { VB(V_USA), IT_PIUMA,     NONE, 0, 0, { {TU, "Mi faccio il solletico. Ih ih. Ok, basta."} } },
+    { VB(V_USA), IT_CALAMARO,  NONE, 0, 0, { {TU, "Non ho COSÌ fame."} } },
+    { VB(V_USA), IT_MONETA,    NONE, 0, 0, { {TU, "Potrei spenderla. Alla Taberna, per esempio."} } },
+    { VB(V_APRI), IT_LIBRO,    NONE, 0, 0, { {TU, "\"Articolo 7: un vero pirata ha cappello, piuma e questo libro.\" Interessante..."} } },
+    { VB(V_USA), IT_CHIAVE,    H_CASSA, 0, 0, { {0, 0} }, 0, 0, 0, open_crate },
+
+    /* ---- molo ---- */
+    { VB(V_GUARDA), H_TABERNA, NONE, 0, 0, { {TU, "La Taberna. Il posto più malfamato dell'isola. E anche l'unico."} } },
+    { VB(V_APRI) | VB(V_VAI), H_TABERNA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_to_tavern },
+    { VB(V_CHIUDI), H_TABERNA, NONE, 0, 0, { {TU, "È già chiusa. Più o meno."} } },
+    { VB(V_GUARDA), H_INSEGNA, NONE, 0, 0, { {TU, "\"TABERNA\". Qualcuno ha cancellato una V. O aggiunto una B."},
+                                             {TU, "I filologi dell'isola ne discutono ancora."} } },
+
+    { VB(V_GUARDA), H_BARBA, NONE, IFNOT(F_GOT_KEY), 0, { {TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."},
+                                                          {TU, "Ha l'aria assetata."} } },
+    { VB(V_GUARDA), H_BARBA, NONE, 0, 0, { {TU, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori."} } },
+    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), HAS(IT_CAPPELLO), {
+        {SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
+        {SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare."},
+        {TU, "(Forse dovrei mettermi il cappello che ho in tasca.)"} } },
+    { VB(V_PARLA),  H_BARBA, NONE, IFNOT(F_HAT_WORN), 0, {
+        {SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello."},
+        {SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare."} } },
+    { VB(V_PARLA),  H_BARBA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_barba },
+    { VB(V_DAI), H_BARBA, ANY_ITEM, IFNOT(F_HAT_WORN), 0, { {SP_BARBA, "Prima mettiti un cappello. Non faccio affari con i turisti."} } },
+    { VB(V_DAI), H_BARBA, IT_BOTTIGLIA, 0, 0, {
+        {SP_BARBA, "Il mio grog! Fumante come piace a me!"},
+        {NARR, "Il capitano lo beve tutto d'un fiato. Gli fumano anche le orecchie."},
+        {SP_BARBA, "Affare fatto, mozzo. Ecco la chiave della cassa sulla spiaggia."},
+        {SP_BARBA, "Non chiedermi perché odora di aringa."} }, SET(F_GOT_KEY), ADD(IT_CHIAVE), REM(IT_BOTTIGLIA) },
+    { VB(V_DAI), H_BARBA, IT_MONETA, 0, 0, { {SP_BARBA, "Una moneta? Cosa me ne faccio? Portami del grog, piuttosto!"} } },
+    { VB(V_DAI), H_BARBA, ANY_ITEM, 0, 0, { {SP_BARBA, "Non mi serve. A me serve qualcosa che fumi e che si beva."} } },
+    { TOCCA, H_BARBA, NONE, 0, 0, { {SP_BARBA, "Mettimi le mani addosso e ti uso come àncora."} } },
+
+    { VB(V_GUARDA), H_MOZZO, NONE, 0, 0, { {TU, "Un pirata piccolo ma determinato. Ha un cappello più grande delle sue ambizioni."} } },
+    { VB(V_PARLA),  H_MOZZO, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_mozzo_talk },
+    { VB(V_DAI),    H_MOZZO, ANY_ITEM, 0, 0, { {SP_MOZZO, "Per me? No, grazie. Il capitano dice di non accettare regali dagli sconosciuti."} } },
+
+    { VB(V_GUARDA),   H_GABBIANO, NONE, 0, 0, { {TU, "Un gabbiano. Mi fissa con l'aria di chi sa qualcosa che io non so."} } },
+    { VB(V_RACCOGLI), H_GABBIANO, NONE, 0, 0, { {TU, "Ci ho provato. Mi ha beccato. Due volte."} } },
+    { VB(V_PARLA),    H_GABBIANO, NONE, 0, 0, { {TU, "Ciao, gabbiano."}, {SP_GABBIANO, "Squaaak."}, {TU, "Credo fosse un \"no\"."} } },
+    { VB(V_DAI), H_GABBIANO, IT_CALAMARO, 0, 0, {
+        {NARR, "Il gabbiano inghiotte il calamaro intero, senza masticare."},
+        {NARR, "Poi, per gratitudine (o per digestione), lascia cadere una piuma sul molo."},
+        {TU, "Grazie... credo."} }, SET(F_GULL_FED), 0, REM(IT_CALAMARO) },
+    { VB(V_DAI), H_GABBIANO, ANY_ITEM, 0, 0, { {TU, "Il gabbiano lo guarda con disprezzo. È un gabbiano esigente."} } },
+
+    { VB(V_GUARDA),   H_PIUMA, NONE, 0, 0, { {TU, "Una piuma di gabbiano, ancora tiepida. Bleah."} } },
+    { VB(V_RACCOGLI), H_PIUMA, NONE, 0, 0, { {TU, "Presa! Una piuma di un uccello che NON è un pollo."} }, SET(F_FEATHER_TAKEN), ADD(IT_PIUMA) },
+
+    { VB(V_GUARDA),   H_BANCARELLA, NONE, 0, 0, { {TU, "Vende souvenir: calamite a forma di pollo, cartoline di polli e... polli."} } },
+    { VB(V_RACCOGLI), H_BANCARELLA, NONE, 0, 0, { {TU, "Ho già abbastanza polli nella mia vita."} } },
+    { VB(V_PARLA),    H_BANCARELLA, NONE, 0, 0, { {TU, "Non c'è nessuno. Il venditore sarà andato a comprare altri polli."} } },
+    { VB(V_GUARDA),   H_VELIERO, NONE, 0, 0, { {TU, "Un bel veliero. Non è mio. Niente qui è mio, a parte i debiti."} } },
+    { VB(V_GUARDA),   H_PAESE, NONE, 0, 0, { {TU, "Puerto Polli: case bianche e tetti rossi. Credo. Qui è tutto in bianco e nero."} } },
+
+    /* ---- taberna ---- */
+    { VB(V_GUARDA), H_OSTE, NONE, 0, 0, { {TU, "L'oste. Un occhio solo, ma ti tiene d'occhio lo stesso."} } },
+    { VB(V_PARLA),  H_OSTE, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_oste },
+    { VB(V_DAI), H_OSTE, IT_MONETA, IF(F_GOT_GROG), 0, { {SP_OSTE, "Hai già avuto il tuo grog. Due grog per un novellino sono un rischio sanitario."} } },
+    { VB(V_DAI), H_OSTE, IT_MONETA, 0, 0, {
+        {SP_OSTE, "Una moneta? Affare fatto! Ecco a te una bottiglia di grog."},
+        {TU, "Ehm... perché la bottiglia fuma?"},
+        {SP_OSTE, "È il grog. Fa così. Non berlo vicino alle candele."} }, SET(F_GOT_GROG), ADD(IT_BOTTIGLIA), REM(IT_MONETA) },
+    { VB(V_DAI), H_OSTE, ANY_ITEM, 0, 0, { {SP_OSTE, "Niente baratti. Accetto solo monete. E qualche volta galline."} } },
+    { VB(V_GUARDA), H_BANDIERA, NONE, 0, 0, { {TU, "Un teschio con due ossa incrociate. O due cosce di pollo? Con questa luce non si capisce."} } },
+    { VB(V_RACCOGLI) | VB(V_TIRA), H_BANDIERA, NONE, 0, 0, { {SP_OSTE, "Giù le mani dalla bandiera! È un cimelio di famiglia."} } },
+    { VB(V_GUARDA), H_QUADRO, NONE, 0, 0, { {TU, "Il ritratto di un pollo con la benda sull'occhio. C'è una dedica: \"Al mio oste preferito\"."} } },
+    { VB(V_GUARDA),   H_LANTERNA, NONE, 0, 0, { {TU, "Una lanterna. Fa più fumo che luce. Come il grog."} } },
+    { VB(V_RACCOGLI), H_LANTERNA, NONE, 0, 0, { {TU, "Scotta. E poi resterebbe al buio l'oste, che già ci vede per metà."} } },
+    { VB(V_GUARDA), H_FINESTRA, NONE, 0, 0, { {TU, "Una finestra così sporca che fuori sembra sempre notte."} } },
+    { VB(V_APRI),   H_FINESTRA, NONE, 0, 0, { {TU, "È sigillata da anni di grasso di pollo fritto."} } },
+    { VB(V_GUARDA),   H_BOTTIGLIE, NONE, 0, 0, { {TU, "Grog, grog d'annata, grog light e un barattolo con scritto \"NON grog\"."} } },
+    { VB(V_RACCOGLI), H_BOTTIGLIE, NONE, 0, 0, { {SP_OSTE, "Ehi! Quelle si pagano. Una moneta a bottiglia."} } },
+    { VB(V_GUARDA),   H_BOCCALE, NONE, 0, 0, { {TU, "Un boccale vuoto. O quasi. Meglio non indagare."} } },
+    { VB(V_RACCOGLI), H_BOCCALE, NONE, 0, 0, { {TU, "È appiccicato al bancone. Non voglio sapere con cosa."} } },
+    { VB(V_GUARDA), H_USCITA_T, NONE, 0, 0, { {TU, "L'uscita. Porta al molo."} } },
+    { VB(V_VAI) | VB(V_APRI), H_USCITA_T, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_to_dock },
+
+    /* ---- spiaggia ---- */
+    { VB(V_GUARDA),   H_CAPPELLO, NONE, 0, 0, { {TU, "Un cappello da pirata! Un po' bagnato, un po' mangiucchiato, ma ha stile."} } },
+    { VB(V_RACCOGLI), H_CAPPELLO, NONE, 0, 0, { {TU, "È incastrato tra le assi del relitto. Devo tirarlo con forza."} } },
+    { VB(V_TIRA), H_CAPPELLO, NONE, 0, 0, {
+        {TU, "Ooooh... issa! Ce l'ho!"},
+        {NARR, "Un granchio, che ci abitava dentro, se ne va profondamente offeso."} }, SET(F_HAT_TAKEN), ADD(IT_CAPPELLO) },
+    { VB(V_GUARDA), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, { {TU, "La cassa è aperta e vuota. Come il mio portafoglio."} } },
+    { VB(V_GUARDA), H_CASSA, NONE, 0, 0, { {TU, "Una vecchia cassa chiusa con un lucchetto. Sopra c'è scritto \"B.P.\""} } },
+    { VB(V_APRI),   H_CASSA, NONE, 0, 0, { {0, 0} }, 0, 0, 0, open_crate },
+    { VB(V_CHIUDI), H_CASSA, NONE, IF(F_CRATE_OPEN), 0, { {TU, "Meglio lasciarla aperta: non ho più la chiave."} } },
+    { VB(V_CHIUDI), H_CASSA, NONE, 0, 0, { {TU, "È già chiusa."} } },
+    { SPOSTA, H_CASSA, NONE, 0, 0, { {TU, "Pesa una tonnellata. Sarà piena di piombo. O di zuppa."} } },
+    { VB(V_RACCOGLI), H_CASSA, NONE, 0, 0, { {TU, "Troppo pesante. E poi non mi entra in tasca."} } },
+    { VB(V_GUARDA), H_RELITTO, NONE, IFNOT(F_HAT_TAKEN), 0, {
+        {TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."},
+        {TU, "C'è un cappello incastrato tra le assi."} } },
+    { VB(V_GUARDA), H_RELITTO, NONE, 0, 0, { {TU, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo."} } },
+    { SPOSTA, H_RELITTO, NONE, 0, 0, { {TU, "Non si muove. È più arenato di me."} } },
+    { VB(V_GUARDA), H_FARO, NONE, 0, 0, { {TU, "Il faro. Dicono che sia chiuso per ferie da vent'anni."} } },
+    { VB(V_GUARDA), H_SCOGLIERA, NONE, 0, 0, { {TU, "Scogli a strapiombo. Ottimi per meditare, pessimi per cadere."} } },
+    { VB(V_GUARDA), H_PALME, NONE, 0, 0, { {TU, "Palme. Tante palme. Nessuna noce di cocco, ovviamente."} } },
+    { TOCCA, H_PALME, NONE, 0, 0, { {TU, "Non sono così forte. Non ancora."} } },
+    { VB(V_GUARDA), H_MARE, NONE, 0, 0, { {TU, "Il mare. Bagnato, come sempre."} } },
+
+    /* ---- rovine ---- */
+    { VB(V_GUARDA), H_CUSTODE, NONE, IF(F_MET_CUSTODE), 0, { {TU, "Il Custode di Puerto Polli. Un pollo con un contratto a tempo indeterminato."} } },
+    { VB(V_GUARDA), H_CUSTODE, NONE, 0, 0, { {TU, "Un pollo. Un pollo ENORME, alto quanto me, con l'aria molto seria."} } },
+    { VB(V_PARLA),  H_CUSTODE, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_talk_custode },
+    { VB(V_DAI), H_CUSTODE, ANY_ITEM, 0, 0, { {0, 0} }, 0, 0, 0, fn_give_custode },
+    { VB(V_RACCOGLI), H_CUSTODE, NONE, 0, 0, { {SP_CUSTODE, "Prova a sollevarmi e ti becco fino a Natale."} } },
+    { SPOSTA, H_CUSTODE, NONE, 0, 0, { {SP_CUSTODE, "Ehi! Rispetto per le istituzioni!"} } },
+    { VB(V_GUARDA), H_LUNA, NONE, 0, 0, { {TU, "La luna piena. Ha la faccia di qualcuno che ha visto troppe storie di pirati."} } },
+    { VB(V_GUARDA), H_NAVE_F, NONE, 0, 0, { {TU, "Una nave fantasma! O una nave normale molto pallida."} } },
+    { VB(V_GUARDA), H_BITTA, NONE, 0, 0, { {TU, "Una bitta per legare le barche. Qualcuno ci ha inciso: \"W i polli\"."} } },
+    { SPOSTA, H_BITTA, NONE, 0, 0, { {TU, "Non si muove. Il molo ringrazia."} } },
+    { VB(V_GUARDA), H_PALMA, NONE, 0, 0, { {TU, "Una palma che si sporge sul mare, come se volesse andarsene anche lei."} } },
+
+    /* ---- sentieri (uscite verso la mappa) ---- */
+    { VB(V_GUARDA), H_SENTIERO_D, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
+    { VB(V_GUARDA), H_SENTIERO_B, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
+    { VB(V_GUARDA), H_SENTIERO_N, NONE, 0, 0, { {TU, "Un sentiero che porta al resto dell'isola."} } },
+    { VB(V_VAI), H_SENTIERO_D, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
+    { VB(V_VAI), H_SENTIERO_B, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
+    { VB(V_VAI), H_SENTIERO_N, NONE, 0, 0, { {0, 0} }, 0, 0, 0, fn_open_map },
+};
+static const int rule_count = sizeof(rules) / sizeof(rules[0]);
+
+static int cond_ok(int c)
+{
+    int neg = c < 0, v, ok;
+    if (!c) return 1;
+    v = neg ? -c : c;
+    ok = v > 1000 ? has_item(v - 1001) : flag(v - 1);
+    return neg ? !ok : ok;
+}
+
+static int rule_matches(const Rule *r, int verb, int o1, int o2)
+{
+    if (!(r->verbs & VB(verb)) || r->o1 != o1) return 0;
+    if (r->o2 == ANY_ITEM) { if (!IS_ITEM(o2)) return 0; }
+    else if (r->o2 != o2) return 0;
+    return cond_ok(r->c1) && cond_ok(r->c2);
+}
+
+/* Le regole valide per ogni oggetto (per i test e lo strumento di debug) */
+int script_rule_count(void) { return rule_count; }
+
 int script_action(int verb, int o1, int o2)
 {
-    /* ---- oggetti dell'inventario ---- */
-    if (verb == V_GUARDA && IS_ITEM(o1)) {
-        switch (o1) {
-        case IT_BOTTIGLIA: say(SP_HERO, "Una bottiglia di grog. Fuma. Le bottiglie non dovrebbero fumare."); break;
-        case IT_MONETA:    say(SP_HERO, "Un doblone. Tutti i miei risparmi."); break;
-        case IT_CHIAVE:    say(SP_HERO, "Una chiave arrugginita che odora di aringa."); break;
-        case IT_MAPPA:     say(SP_HERO, "La mappa di Puerto Polli. Se la uso posso spostarmi sull'isola."); break;
-        case IT_PIUMA:     say(SP_HERO, "Una piuma di gabbiano. Decisamente NON di pollo."); break;
-        case IT_CALAMARO:  say(SP_HERO, "Un calamaro essiccato. Il portafortuna del capitano. Puzza di fortuna."); break;
-        case IT_CAPPELLO:
-            say(SP_HERO, flag(F_HAT_WORN) ? "Il mio cappello da pirata. Ce l'ho in testa e mi sta benissimo."
-                                          : "Un cappello da pirata. Starebbe meglio sulla mia testa.");
-            break;
-        case IT_LIBRO:
-            say(SP_HERO, "\"Il Codice dei Pirati\". Articolo 1: mai fidarsi di un pollo.");
-            say(SP_HERO, "Articolo 2: vedi articolo 1.");
-            break;
-        }
-        return 1;
-    }
-    if (verb == V_USA && IS_ITEM(o1) && o2 == OBJ_NONE) {
-        switch (o1) {
-        case IT_MAPPA: open_map(); return 1;
-        case IT_CAPPELLO:
-            if (flag(F_HAT_WORN)) {
-                say(SP_HERO, "Ce l'ho già in testa. Toglierlo? Mai più.");
-            } else {
-                set_flag(F_HAT_WORN);
-                say(SP_HERO, "Me lo metto in testa. Mi sento già più pirata. E un po' umido.");
-            }
-            return 1;
-        case IT_BOTTIGLIA: say(SP_HERO, "Berlo io? Fuma! Neanche morto. Beh, forse da morto."); return 1;
-        case IT_LIBRO:     say(SP_HERO, "Leggo a caso: \"Articolo 14: il grog va bevuto, non annusato.\" Profondo."); return 1;
-        case IT_PIUMA:     say(SP_HERO, "Mi faccio il solletico. Ih ih. Ok, basta."); return 1;
-        case IT_CALAMARO:  say(SP_HERO, "Non ho COSÌ fame."); return 1;
-        case IT_MONETA:    say(SP_HERO, "Potrei spenderla. Alla Taberna, per esempio."); return 1;
-        }
-    }
-    if (verb == V_APRI && o1 == IT_LIBRO) {
-        say(SP_HERO, "\"Articolo 7: un vero pirata ha cappello, piuma e questo libro.\" Interessante...");
-        return 1;
-    }
-
-    /* combinazioni "Usa X con Y" */
-    if (verb == V_USA && o1 == IT_CHIAVE && o2 == H_CASSA) return open_crate();
+    int i, k;
     /* "Usa X con personaggio" equivale a "Dai X a personaggio" */
     if (verb == V_USA && IS_ITEM(o1) &&
         (o2 == H_GABBIANO || o2 == H_CUSTODE || o2 == H_BARBA || o2 == H_OSTE || o2 == H_MOZZO)) {
@@ -394,229 +563,16 @@ int script_action(int verb, int o1, int o2)
         o2 = t;
         verb = V_DAI;
     }
-
-    /* ---- molo ---- */
-    switch (o1) {
-    case H_TABERNA:
-        if (verb == V_GUARDA) { say(SP_HERO, "La Taberna. Il posto più malfamato dell'isola. E anche l'unico."); return 1; }
-        if (verb == V_APRI || verb == V_VAI) { go_room(ROOM_TAVERN); return 1; }
-        if (verb == V_CHIUDI) { say(SP_HERO, "È già chiusa. Più o meno."); return 1; }
-        break;
-    case H_INSEGNA:
-        if (verb == V_GUARDA) {
-            say(SP_HERO, "\"TABERNA\". Qualcuno ha cancellato una V. O aggiunto una B.");
-            say(SP_HERO, "I filologi dell'isola ne discutono ancora.");
-            return 1;
-        }
-        break;
-    case H_BARBA:
-        if (verb == V_GUARDA) {
-            say(SP_HERO, "Un pirata enorme, con benda, barba e un tricorno che ha visto giorni migliori.");
-            if (!flag(F_GOT_KEY)) say(SP_HERO, "Ha l'aria assetata.");
-            return 1;
-        }
-        if (verb == V_PARLA) {
-            if (!flag(F_HAT_WORN)) {
-                say(SP_BARBA, "Bah! Non parlo con chi va in giro senza cappello.");
-                say(SP_BARBA, "Senza cappello sei un turista. E i turisti si buttano a mare.");
-                if (has_item(IT_CAPPELLO)) say(SP_HERO, "(Forse dovrei mettermi il cappello che ho in tasca.)");
-                return 1;
-            }
-            start_dialog(SP_BARBA);
-            return 1;
-        }
-        if (verb == V_DAI && IS_ITEM(o2)) return give_to_barba(o2);
-        if (verb == V_RACCOGLI || verb == V_SPINGI || verb == V_TIRA) {
-            say(SP_BARBA, "Mettimi le mani addosso e ti uso come àncora.");
-            return 1;
-        }
-        break;
-    case H_MOZZO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un pirata piccolo ma determinato. Ha un cappello più grande delle sue ambizioni."); return 1; }
-        if (verb == V_PARLA) {
-            if (!flag(F_MOZZO_1)) {
-                set_flag(F_MOZZO_1);
-                say(SP_MOZZO, "Ciao! Sono Pino, il mozzo. Il capitano dice che sono il miglior mozzo che abbia mai avuto.");
-                say(SP_MOZZO, "Sono anche l'unico.");
-            } else if (!flag(F_MOZZO_2)) {
-                set_flag(F_MOZZO_2);
-                say(SP_MOZZO, "Il capitano oggi è di cattivo umore. Quando è di cattivo umore, di solito ha sete.");
-                say(SP_MOZZO, "Beve solo il grog della Taberna. Quello che fuma.");
-            } else {
-                clear_flag(F_MOZZO_1);
-                clear_flag(F_MOZZO_2);
-                say(SP_MOZZO, "Lo sai che quel gabbiano va matto per i calamari? Una volta ne ha rubato uno al capitano!");
-                say(SP_MOZZO, "Il capitano non gliel'ha mai perdonata. Da allora tiene il suo calamaro sotto chiave.");
-            }
-            return 1;
-        }
-        if (verb == V_DAI && IS_ITEM(o2)) {
-            say(SP_MOZZO, "Per me? No, grazie. Il capitano dice di non accettare regali dagli sconosciuti.");
-            return 1;
-        }
-        break;
-    case H_GABBIANO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un gabbiano. Mi fissa con l'aria di chi sa qualcosa che io non so."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "Ci ho provato. Mi ha beccato. Due volte."); return 1; }
-        if (verb == V_PARLA) {
-            say(SP_HERO, "Ciao, gabbiano.");
-            say(SP_GABBIANO, "Squaaak.");
-            say(SP_HERO, "Credo fosse un \"no\".");
-            return 1;
-        }
-        if (verb == V_DAI && o2 == IT_CALAMARO) {
-            remove_item(IT_CALAMARO);
-            set_flag(F_GULL_FED);
-            say(SP_NARRATORE, "Il gabbiano inghiotte il calamaro intero, senza masticare.");
-            say(SP_NARRATORE, "Poi, per gratitudine (o per digestione), lascia cadere una piuma sul molo.");
-            say(SP_HERO, "Grazie... credo.");
-            return 1;
-        }
-        if (verb == V_DAI && IS_ITEM(o2)) { say(SP_HERO, "Il gabbiano lo guarda con disprezzo. È un gabbiano esigente."); return 1; }
-        break;
-    case H_PIUMA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una piuma di gabbiano, ancora tiepida. Bleah."); return 1; }
-        if (verb == V_RACCOGLI) {
-            set_flag(F_FEATHER_TAKEN);
-            add_item(IT_PIUMA);
-            say(SP_HERO, "Presa! Una piuma di un uccello che NON è un pollo.");
-            return 1;
-        }
-        break;
-    case H_BANCARELLA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Vende souvenir: calamite a forma di pollo, cartoline di polli e... polli."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "Ho già abbastanza polli nella mia vita."); return 1; }
-        if (verb == V_PARLA) { say(SP_HERO, "Non c'è nessuno. Il venditore sarà andato a comprare altri polli."); return 1; }
-        break;
-    case H_VELIERO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un bel veliero. Non è mio. Niente qui è mio, a parte i debiti."); return 1; }
-        break;
-    case H_PAESE:
-        if (verb == V_GUARDA) {
-            say(SP_HERO, "Puerto Polli: case bianche e tetti rossi. Credo. Qui è tutto in bianco e nero.");
-            return 1;
-        }
-        break;
-
-    /* ---- taberna ---- */
-    case H_OSTE:
-        if (verb == V_GUARDA) { say(SP_HERO, "L'oste. Un occhio solo, ma ti tiene d'occhio lo stesso."); return 1; }
-        if (verb == V_PARLA) { start_dialog(SP_OSTE); return 1; }
-        if (verb == V_DAI && o2 == IT_MONETA) {
-            if (flag(F_GOT_GROG)) { say(SP_OSTE, "Hai già avuto il tuo grog. Due grog per un novellino sono un rischio sanitario."); return 1; }
-            remove_item(IT_MONETA);
-            add_item(IT_BOTTIGLIA);
-            set_flag(F_GOT_GROG);
-            say(SP_OSTE, "Una moneta? Affare fatto! Ecco a te una bottiglia di grog.");
-            say(SP_HERO, "Ehm... perché la bottiglia fuma?");
-            say(SP_OSTE, "È il grog. Fa così. Non berlo vicino alle candele.");
-            return 1;
-        }
-        if (verb == V_DAI && IS_ITEM(o2)) { say(SP_OSTE, "Niente baratti. Accetto solo monete. E qualche volta galline."); return 1; }
-        break;
-    case H_BANDIERA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un teschio con due ossa incrociate. O due cosce di pollo? Con questa luce non si capisce."); return 1; }
-        if (verb == V_RACCOGLI || verb == V_TIRA) { say(SP_OSTE, "Giù le mani dalla bandiera! È un cimelio di famiglia."); return 1; }
-        break;
-    case H_QUADRO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Il ritratto di un pollo con la benda sull'occhio. C'è una dedica: \"Al mio oste preferito\"."); return 1; }
-        break;
-    case H_LANTERNA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una lanterna. Fa più fumo che luce. Come il grog."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "Scotta. E poi resterebbe al buio l'oste, che già ci vede per metà."); return 1; }
-        break;
-    case H_FINESTRA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una finestra così sporca che fuori sembra sempre notte."); return 1; }
-        if (verb == V_APRI) { say(SP_HERO, "È sigillata da anni di grasso di pollo fritto."); return 1; }
-        break;
-    case H_BOTTIGLIE:
-        if (verb == V_GUARDA) { say(SP_HERO, "Grog, grog d'annata, grog light e un barattolo con scritto \"NON grog\"."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_OSTE, "Ehi! Quelle si pagano. Una moneta a bottiglia."); return 1; }
-        break;
-    case H_BOCCALE:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un boccale vuoto. O quasi. Meglio non indagare."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "È appiccicato al bancone. Non voglio sapere con cosa."); return 1; }
-        break;
-    case H_USCITA_T:
-        if (verb == V_GUARDA) { say(SP_HERO, "L'uscita. Porta al molo."); return 1; }
-        if (verb == V_VAI || verb == V_APRI) { go_room(ROOM_DOCK); return 1; }
-        break;
-
-    /* ---- spiaggia ---- */
-    case H_CAPPELLO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un cappello da pirata! Un po' bagnato, un po' mangiucchiato, ma ha stile."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "È incastrato tra le assi del relitto. Devo tirarlo con forza."); return 1; }
-        if (verb == V_TIRA) {
-            set_flag(F_HAT_TAKEN);
-            add_item(IT_CAPPELLO);
-            say(SP_HERO, "Ooooh... issa! Ce l'ho!");
-            say(SP_NARRATORE, "Un granchio, che ci abitava dentro, se ne va profondamente offeso.");
-            return 1;
-        }
-        break;
-    case H_CASSA:
-        if (verb == V_GUARDA) {
-            say(SP_HERO, flag(F_CRATE_OPEN) ? "La cassa è aperta e vuota. Come il mio portafoglio."
-                                            : "Una vecchia cassa chiusa con un lucchetto. Sopra c'è scritto \"B.P.\"");
-            return 1;
-        }
-        if (verb == V_APRI) return open_crate();
-        if (verb == V_CHIUDI) { say(SP_HERO, flag(F_CRATE_OPEN) ? "Meglio lasciarla aperta: non ho più la chiave." : "È già chiusa."); return 1; }
-        if (verb == V_SPINGI || verb == V_TIRA) { say(SP_HERO, "Pesa una tonnellata. Sarà piena di piombo. O di zuppa."); return 1; }
-        if (verb == V_RACCOGLI) { say(SP_HERO, "Troppo pesante. E poi non mi entra in tasca."); return 1; }
-        break;
-    case H_RELITTO:
-        if (verb == V_GUARDA) {
-            say(SP_HERO, "Il relitto di una barca. Sulla fiancata c'è scritto \"Pollo Volante\". Non ha volato a lungo.");
-            if (!flag(F_HAT_TAKEN)) say(SP_HERO, "C'è un cappello incastrato tra le assi.");
-            return 1;
-        }
-        if (verb == V_SPINGI || verb == V_TIRA) { say(SP_HERO, "Non si muove. È più arenato di me."); return 1; }
-        break;
-    case H_FARO:
-        if (verb == V_GUARDA) { say(SP_HERO, "Il faro. Dicono che sia chiuso per ferie da vent'anni."); return 1; }
-        break;
-    case H_SCOGLIERA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Scogli a strapiombo. Ottimi per meditare, pessimi per cadere."); return 1; }
-        break;
-    case H_PALME:
-        if (verb == V_GUARDA) { say(SP_HERO, "Palme. Tante palme. Nessuna noce di cocco, ovviamente."); return 1; }
-        if (verb == V_SPINGI || verb == V_TIRA || verb == V_RACCOGLI) { say(SP_HERO, "Non sono così forte. Non ancora."); return 1; }
-        break;
-    case H_MARE:
-        if (verb == V_GUARDA) { say(SP_HERO, "Il mare. Bagnato, come sempre."); return 1; }
-        break;
-
-    /* ---- rovine ---- */
-    case H_CUSTODE:
-        if (verb == V_GUARDA) {
-            if (flag(F_MET_CUSTODE)) say(SP_HERO, "Il Custode di Puerto Polli. Un pollo con un contratto a tempo indeterminato.");
-            else say(SP_HERO, "Un pollo. Un pollo ENORME, alto quanto me, con l'aria molto seria.");
-            return 1;
-        }
-        if (verb == V_PARLA) { start_dialog(SP_CUSTODE); return 1; }
-        if (verb == V_DAI && IS_ITEM(o2)) { if (give_to_custode(o2)) return 1; }
-        if (verb == V_RACCOGLI) { say(SP_CUSTODE, "Prova a sollevarmi e ti becco fino a Natale."); return 1; }
-        if (verb == V_SPINGI || verb == V_TIRA) { say(SP_CUSTODE, "Ehi! Rispetto per le istituzioni!"); return 1; }
-        break;
-    case H_LUNA:
-        if (verb == V_GUARDA) { say(SP_HERO, "La luna piena. Ha la faccia di qualcuno che ha visto troppe storie di pirati."); return 1; }
-        break;
-    case H_NAVE_F:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una nave fantasma! O una nave normale molto pallida."); return 1; }
-        break;
-    case H_BITTA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una bitta per legare le barche. Qualcuno ci ha inciso: \"W i polli\"."); return 1; }
-        if (verb == V_SPINGI || verb == V_TIRA) { say(SP_HERO, "Non si muove. Il molo ringrazia."); return 1; }
-        break;
-    case H_PALMA:
-        if (verb == V_GUARDA) { say(SP_HERO, "Una palma che si sporge sul mare, come se volesse andarsene anche lei."); return 1; }
-        break;
-
-    case H_SENTIERO_D: case H_SENTIERO_B: case H_SENTIERO_N:
-        if (verb == V_GUARDA) { say(SP_HERO, "Un sentiero che porta al resto dell'isola."); return 1; }
-        if (verb == V_VAI) { open_map(); return 1; }
-        break;
+    for (i = 0; i < rule_count; i++) {
+        const Rule *r = &rules[i];
+        if (!rule_matches(r, verb, o1, o2)) continue;
+        if (r->fn) return r->fn(o1, o2);
+        if (r->rem) remove_item(r->rem - 1);
+        if (r->add) add_item(r->add - 1);
+        if (r->set) set_flag(r->set - 1);
+        for (k = 0; k < 4 && r->lines[k].text; k++)
+            say(r->lines[k].sp, r->lines[k].text);
+        return 1;
     }
     return 0;
 }
@@ -649,35 +605,35 @@ enum {
     D_CU_PIRATA, D_CU_PERCHE, D_CU_PROVE, D_CU_CAPPELLO, D_CU_TASCA
 };
 
-#define ADD(i, t) do { ids[n] = (i); texts[n] = (t); n++; } while (0)
+#define OPT(i, t) do { ids[n] = (i); texts[n] = (t); n++; } while (0)
 
 int dialog_options(int npc, int ids[MAX_CHOICES], const char *texts[MAX_CHOICES])
 {
     int n = 0;
     switch (npc) {
     case SP_OSTE:
-        ADD(D_CHI, "Chi sei?");
-        ADD(D_ISOLA, "Che posto è Puerto Polli?");
-        ADD(D_PIRATA, "Voglio diventare un pirata!");
-        ADD(D_GROG, "Vorrei qualcosa da bere.");
-        ADD(D_CIAO, "Arrivederci.");
+        OPT(D_CHI, "Chi sei?");
+        OPT(D_ISOLA, "Che posto è Puerto Polli?");
+        OPT(D_PIRATA, "Voglio diventare un pirata!");
+        OPT(D_GROG, "Vorrei qualcosa da bere.");
+        OPT(D_CIAO, "Arrivederci.");
         break;
     case SP_BARBA:
-        ADD(D_CHI, "Chi sei?");
-        ADD(D_BP_CAPPELLO, "Ti piace il mio cappello?");
-        ADD(D_BP_CUSTODE, "Conosci il Custode?");
-        if (flag(F_KNOWS_KEY) && !flag(F_GOT_KEY)) ADD(D_BP_CHIAVE, "Mi daresti la chiave della cassa?");
-        ADD(D_CIAO, "Ci vediamo, capitano.");
+        OPT(D_CHI, "Chi sei?");
+        OPT(D_BP_CAPPELLO, "Ti piace il mio cappello?");
+        OPT(D_BP_CUSTODE, "Conosci il Custode?");
+        if (flag(F_KNOWS_KEY) && !flag(F_GOT_KEY)) OPT(D_BP_CHIAVE, "Mi daresti la chiave della cassa?");
+        OPT(D_CIAO, "Ci vediamo, capitano.");
         break;
     case SP_CUSTODE:
-        if (!flag(F_KNOWS_PROOFS)) ADD(D_CU_PIRATA, "Voglio diventare un pirata.");
-        ADD(D_CU_PERCHE, "Perché un pollo fa da custode?");
-        if (flag(F_KNOWS_PROOFS)) ADD(D_CU_PROVE, "Quali erano le prove?");
+        if (!flag(F_KNOWS_PROOFS)) OPT(D_CU_PIRATA, "Voglio diventare un pirata.");
+        OPT(D_CU_PERCHE, "Perché un pollo fa da custode?");
+        if (flag(F_KNOWS_PROOFS)) OPT(D_CU_PROVE, "Quali erano le prove?");
         if (flag(F_KNOWS_PROOFS) && flag(F_HAT_WORN) && !flag(F_PROOF_HAT))
-            ADD(D_CU_CAPPELLO, "Guarda il mio cappello!");
+            OPT(D_CU_CAPPELLO, "Guarda il mio cappello!");
         if (flag(F_KNOWS_PROOFS) && has_item(IT_CAPPELLO) && !flag(F_HAT_WORN))
-            ADD(D_CU_TASCA, "Ho un cappello in tasca, vale?");
-        ADD(D_CIAO, "Arrivederci.");
+            OPT(D_CU_TASCA, "Ho un cappello in tasca, vale?");
+        OPT(D_CIAO, "Arrivederci.");
         break;
     }
     return n;

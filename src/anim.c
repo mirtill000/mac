@@ -193,22 +193,43 @@ static int step_bob(const Anim *a, AnimState *s, int speaker, GRect *r, int *any
     return 1;
 }
 
-static int get_px(const unsigned char *buf, int x, int y)
+/* riga dy di cur, pixel [x0,x1) = riga sy di base (a byte, con maschere ai bordi) */
+static void copy_bits_row(int dy, int sy, int x0, int x1)
 {
-    return (buf[y * FB_RB + (x >> 3)] >> (7 - (x & 7))) & 1;
+    int b0 = x0 >> 3, b1 = (x1 - 1) >> 3, b;
+    unsigned char *d = cur + dy * FB_RB;
+    const unsigned char *s = base + sy * FB_RB;
+    for (b = b0; b <= b1; b++) {
+        unsigned char m = 0xFF;
+        if (b == b0) m &= (unsigned char)(0xFF >> (x0 & 7));
+        if (b == b1 && (x1 & 7)) m &= (unsigned char)(0xFF << (8 - (x1 & 7)));
+        d[b] = (unsigned char)((d[b] & ~m) | (s[b] & m));
+    }
+}
+
+/* riga y di cur, pixel [x0,x1) tutti neri o tutti bianchi */
+static void fill_bits_row(int y, int x0, int x1, int black)
+{
+    int b0 = x0 >> 3, b1 = (x1 - 1) >> 3, b;
+    unsigned char *d = cur + y * FB_RB;
+    for (b = b0; b <= b1; b++) {
+        unsigned char m = 0xFF;
+        if (b == b0) m &= (unsigned char)(0xFF >> (x0 & 7));
+        if (b == b1 && (x1 & 7)) m &= (unsigned char)(0xFF << (8 - (x1 & 7)));
+        d[b] = black ? (unsigned char)(d[b] | m) : (unsigned char)(d[b] & ~m);
+    }
 }
 
 /* la mandibola scende di k pixel; lo spazio che si apre e' la bocca */
 static void draw_jaw(const Anim *a, int k)
 {
-    int x, y;
-    for (y = a->y1 - 1; y >= a->y0; y--) {
-        for (x = a->x0; x < a->x1; x++) {
-            int v;
-            if (y - k >= a->y0) v = get_px(base, x, y - k);          /* mandibola spostata */
-            else if (x >= a->p2 && x <= a->p3) v = !(a->p1 & TALK_LIGHT); /* bocca aperta */
-            else v = get_px(base, x, y);
-            set_px(x, y, v);
+    int y;
+    for (y = a->y0; y < a->y1; y++) {
+        if (y - k >= a->y0) {
+            copy_bits_row(y, y - k, a->x0, a->x1);              /* mandibola spostata */
+        } else {
+            copy_bits_row(y, y, a->x0, a->x1);
+            fill_bits_row(y, a->p2, a->p3 + 1, !(a->p1 & TALK_LIGHT));   /* bocca aperta */
         }
     }
 }

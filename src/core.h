@@ -13,11 +13,13 @@
 enum { MODE_TITLE, MODE_PLAY, MODE_MAP, MODE_END };
 enum { MODAL_NONE, MODAL_PAUSE, MODAL_SAVE, MODAL_LOAD, MODAL_OPTIONS, MODAL_INVENTORY };
 
+#define FLAG_BYTES 16            /* 128 flag della storia */
+
 typedef struct {
     unsigned char room;
     signed char dir;
     short hx, hy;
-    unsigned long flags;
+    unsigned char flags[FLAG_BYTES];
     unsigned char ninv;
     signed char inv[IT_COUNT];
 } GameState;
@@ -39,11 +41,16 @@ extern int cur_verb, sel_item, hover_obj, hover_verb, hover_choice, hover_menu;
 extern int mouse_x, mouse_y;
 
 /* messaggi */
-typedef struct { signed char speaker; signed char call; const char *text; } Msg;
-#define MSG_MAX 48
+typedef struct {
+    signed char speaker, call;
+    short bytes, nchar;          /* porzione di testo di questo box */
+    const char *text;
+} Msg;
+#define MSG_MAX 64
+#define MSG_LINES 4              /* righe massime per box; oltre si spezza */
+extern int msg_overflow;
 extern Msg msgs[MSG_MAX];
 extern int msg_head, msg_count, msg_timer;
-#define MAX_LINES 8
 
 /* dialoghi */
 extern int dlg_npc, dlg_ending, dlg_n;
@@ -71,9 +78,11 @@ extern int blink_timer, blinking;
 
 /* salvataggi */
 #define SAVE_SLOTS 8
-#define SAVE_LEN 64
+#define SAVE_LEN 96
+#define SAVE_VERSION 2
+typedef struct { int room, day, month, year, hour, minute; } SaveInfo;
 extern unsigned char slot_data[SAVE_SLOTS][SAVE_LEN];
-extern int slot_used[SAVE_SLOTS];
+extern int slot_used[SAVE_SLOTS], slot_len[SAVE_SLOTS];
 
 /* layout dello schermo */
 #define VERB_X(i)   (16 + ((i) / 3) * 88)
@@ -89,20 +98,22 @@ extern int slot_used[SAVE_SLOTS];
 typedef struct { short x, y, w, h; } WinRect;
 extern const WinRect pause_win, save_win, opt_win, inv_win;
 
+/* strumenti di sviluppo: contatore delle prestazioni e disegno delle aree */
+extern int perf_on, perf_fps, perf_peak_ms, debug_overlay;
+
 /* --- msg.c: messaggi e box dei dialoghi --- */
 Msg  *cur_msg(void);
 void  run_call(int c);
 void  next_msg(void);
 int   msg_duration(const Msg *m);
-GRect msg_box_rect(const Msg *m, int *nlines, const char *starts[], int lens[]);
+GRect msg_box_rect(const Msg *m);
 void  draw_triangle(GRect r, int on);
 void  draw_msg(void);
-int   wrap_text(const char *s, int maxc, const char *starts[], int lens[]);
+int   wrap_l1(const unsigned char *s, int n, int maxc, int starts[], int lens[], int maxlines);
 /* utilita' di testo */
 int   in_rect(int x, int y, int rx, int ry, int rw, int rh);
 void  str_cat(char *d, const char *s, int max);
 void  num_cat(char *d, int v, int digits, int max);
-void  text_n(int x, int y, const char *s, int n, int font, int col);
 void  text_center(int y, const char *s, int font, int col);
 
 /* --- walk.c: camminata, oggetti cliccabili, azioni --- */
@@ -122,7 +133,8 @@ void  update_walk(void);
 void  put16(unsigned char *p, int v);
 int   get16(const unsigned char *p);
 void  serialize(unsigned char *d);
-int   deserialize(const unsigned char *d);
+int   deserialize(const unsigned char *d, int len);
+int   save_info(const unsigned char *d, int len, SaveInfo *si);
 void  refresh_slots(void);
 void  slot_label(int i, char *buf, int max);
 void  clear_interaction(void);

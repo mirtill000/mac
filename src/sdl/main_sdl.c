@@ -48,7 +48,7 @@ int plat_save(int slot, const unsigned char *data, int len)
     return 0;
 }
 
-int plat_load(int slot, unsigned char *data, int len)
+int plat_load(int slot, unsigned char *data, int maxlen)
 {
     char p[64];
     FILE *f;
@@ -56,9 +56,9 @@ int plat_load(int slot, unsigned char *data, int len)
     slot_path(slot, p, sizeof(p));
     f = fopen(p, "rb");
     if (!f) return -1;
-    n = fread(data, 1, (size_t)len, f);
+    n = fread(data, 1, (size_t)maxlen, f);
     fclose(f);
-    return n == (size_t)len ? 0 : -1;
+    return (int)n;
 }
 
 void plat_datetime(int *d, int *mo, int *y, int *h, int *mi)
@@ -70,6 +70,8 @@ void plat_datetime(int *d, int *mo, int *y, int *h, int *mi)
 }
 
 void plat_beep(void) { printf("\a"); fflush(stdout); }
+
+unsigned long plat_ticks(void) { return (unsigned long)SDL_GetTicks() * 60UL / 1000UL; }
 
 int main(int argc, char **argv)
 {

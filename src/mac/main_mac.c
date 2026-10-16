@@ -27,6 +27,9 @@
 #include "../platform.h"
 
 static WindowPtr win;
+static int suspended;              /* un'altra applicazione e' in primo piano */
+static int hide_when_active;       /* la barra dei menu va nascosta quando siamo attivi */
+static ProcPtr old_exit_to_shell;
 static BitMap off_bits;
 static int menubar_hidden;
 static short saved_mbar_height;
@@ -77,18 +80,19 @@ int plat_save(int slot, const unsigned char *data, int len)
     return (err == noErr && count == len) ? 0 : -1;
 }
 
-int plat_load(int slot, unsigned char *data, int len)
+int plat_load(int slot, unsigned char *data, int maxlen)
 {
     Str255 name;
     short ref;
-    long count = len;
+    long count = maxlen;
     OSErr err;
 
     save_name(slot, name);
     if (FSOpen(name, 0, &ref) != noErr) return -1;
-    err = FSRead(ref, &count, data);
+    err = FSRead(ref, &count, data);       /* eofErr: file piu' corto, va bene */
     FSClose(ref);
-    return (err == noErr && count == len) ? 0 : -1;
+    if (err != noErr && err != eofErr) return -1;
+    return (int)count;
 }
 
 void plat_datetime(int *d, int *mo, int *y, int *h, int *mi)
@@ -103,13 +107,17 @@ void plat_datetime(int *d, int *mo, int *y, int *h, int *mi)
 
 void plat_beep(void) { SysBeep(10); }
 
+unsigned long plat_ticks(void) { return TickCount(); }
+
 /* ------------------------------------------------------------------ */
 /* Barra dei menu                                                     */
 /* ------------------------------------------------------------------ */
 
 static void hide_menu_bar(void)
 {
-    RgnHandle mb = NewRgn();
+    RgnHandle mb;
+    if (menubar_hidden) return;
+    mb = NewRgn();
     saved_mbar_height = LMGetMBarHeight();
     saved_gray = NewRgn();
     CopyRgn(LMGetGrayRgn(), saved_gray);
@@ -129,6 +137,24 @@ static void restore_menu_bar(void)
     DisposeRgn(saved_gray);
     menubar_hidden = 0;
     DrawMenuBar();
+}
+
+/* Se l'applicazione viene chiusa in modo anomalo (per esempio con
+   Mela-Opzione-Esc), ExitToShell viene chiamato comunque: lo intercettiamo
+   per rimettere a posto la barra dei menu prima di uscire. */
+#define TRAP_EXITTOSHELL 0xA9F4
+
+static pascal void my_exit_to_shell(void)
+{
+    restore_menu_bar();
+    SetToolTrapAddress(old_exit_to_shell, TRAP_EXITTOSHELL);
+    ExitToShell();
+}
+
+static void protect_menu_bar(void)
+{
+    old_exit_to_shell = GetToolTrapAddress(TRAP_EXITTOSHELL);
+    SetToolTrapAddress((ProcPtr)my_exit_to_shell, TRAP_EXITTOSHELL);
 }
 
 static void setup_menus(void)
@@ -205,6 +231,8 @@ static void make_window(void)
     int top;
 
     if (sh - LMGetMBarHeight() < FB_H) {
+        hide_when_active = 1;
+        protect_menu_bar();
         hide_menu_bar();
         top = sb.top;
     } else {
@@ -261,7 +289,11 @@ int main(void)
         int steps;
 
         if (has_wne) {
-            got = WaitNextEvent(everyEvent, &ev, 0, NULL);
+            /* si dorme fino al prossimo passo logico: le altre applicazioni
+               (e il Finder) non restano senza processore */
+            long sleep = suspended ? 30 : (long)(last + TICKS_PER_FRAME) - (long)TickCount();
+            if (sleep < 0) sleep = 0;
+            got = WaitNextEvent(everyEvent, &ev, (unsigned long)sleep, NULL);
         } else {
             SystemTask();
             got = GetNextEvent(everyEvent, &ev);
@@ -296,12 +328,25 @@ int main(void)
                 }
                 break;
             case osEvt:
-                /* ritorno da un'altra applicazione (MultiFinder) */
-                if (((ev.message >> 24) & 0xFF) == 0x01 && (ev.message & 1))
-                    plat_present(0, 0, FB_W, FB_H);
+                if (((ev.message >> 24) & 0xFF) == 0x01) {        /* suspend/resume */
+                    if (ev.message & 1) {
+                        /* di nuovo in primo piano */
+                        suspended = 0;
+                        if (hide_when_active) hide_menu_bar();
+                        SelectWindow(win);
+                        plat_present(0, 0, FB_W, FB_H);
+                        last = TickCount();
+                    } else {
+                        /* in secondo piano: le altre applicazioni devono
+                           avere la loro barra dei menu */
+                        suspended = 1;
+                        restore_menu_bar();
+                    }
+                }
                 break;
             }
         }
+        if (suspended) continue;                /* gioco in pausa */
 
         SetPort(win);
         GetMouse(&mouse);
@@ -319,6 +364,7 @@ int main(void)
     }
 
     restore_menu_bar();
+    if (old_exit_to_shell) SetToolTrapAddress(old_exit_to_shell, TRAP_EXITTOSHELL);
     DisposeWindow(win);
     return 0;
 }
