@@ -130,7 +130,7 @@ salvare schermate in formato PBM.
 | `src/sdl/main_sdl.c` | versione PC con SDL2 |
 | `src/test/main_test.c` | test automatico della soluzione |
 | `tools/make_assets.py` | pipeline grafica: mockup → scene ripulite → dithering di Atkinson → C |
-| `tools/hero.py` | sprite del protagonista (aspirante pirata biondo col codino, nello stile delle avventure LucasArts): disegnato per parti a risoluzione 4×, ridotto e contornato a 1 pixel; 3 misure × 9 fotogrammi, più il cappello come strato a parte |
+| `tools/hero.py` | sprite del protagonista: testa, busto e braccia ricavati dal protagonista del mockup (sagoma tracciata a mano, ridotta e convertita in retini fissi), gambe e stivali disegnati per la camminata; 3 misure × 9 fotogrammi più il cappello come strato |
 
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.
