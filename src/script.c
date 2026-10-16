@@ -112,7 +112,7 @@ const RoomDepth room_depth[ROOM_COUNT] = {
 /* Animazioni degli sfondi (vedi anim.h). x0 e x1 multipli di 8.
    Regola: al massimo due effetti continui per scena, cosi' l'occhio non si
    disperde e il 68000 respira. Quando un personaggio parla si muove solo la
-   sua bocca (AN_TALK), non tutta la figura. */
+   sua bocca (AN_TALK): pochi pixel, non un riquadro. */
 const Anim anims[] = {
     /* scena          tipo        x0   y0   x1   y1   p1          p2   p3 */
     /* titolo: riflessi del mare ai lati del menu, un gabbiano ogni tanto */
@@ -122,12 +122,12 @@ const Anim anims[] = {
 
     /* molo: il mare; le bocche dei pirati */
     { ROOM_DOCK,    AN_WAVE,    120, 128, 232, 182, 1,          10,  4 },
-    { ROOM_DOCK,    AN_TALK,    440, 172, 462, 190, SP_BARBA + TALK_LIGHT, 445, 455 },
-    { ROOM_DOCK,    AN_TALK,    340, 153, 358, 162, SP_MOZZO,  345, 352 },
+    { ROOM_DOCK,    AN_TALK,    446, 175, 455, 178, SP_BARBA + TALK_LIGHT, 446, 454 },
+    { ROOM_DOCK,    AN_TALK,    345, 153, 353, 156, SP_MOZZO,  345, 352 },
 
     /* taberna: la lanterna; la bocca dell'oste tra baffi e barba */
     { ROOM_TAVERN,  AN_FLICKER, 168,  96, 232, 168, 0,           0,  0 },
-    { ROOM_TAVERN,  AN_TALK,    338, 158, 360, 172, SP_OSTE,   343, 354 },
+    { ROOM_TAVERN,  AN_TALK,    343, 158, 355, 161, SP_OSTE,   343, 354 },
 
     /* spiaggia: il mare e un gabbiano di passaggio */
     { ROOM_BEACH,   AN_WAVE,    336, 122, 512, 164, 1,          12,  4 },
@@ -135,7 +135,7 @@ const Anim anims[] = {
 
     /* rovine: le stelle; il becco del Custode si apre quando parla */
     { ROOM_NIGHT,   AN_TWINKLE,   0,   0, 344, 112, 0,           0,  0 },
-    { ROOM_NIGHT,   AN_TALK,    336, 122, 358, 130, SP_CUSTODE, 338, 354 },
+    { ROOM_NIGHT,   AN_TALK,    338, 122, 355, 125, SP_CUSTODE, 338, 354 },
 };
 const int anim_count = sizeof(anims) / sizeof(anims[0]);
 

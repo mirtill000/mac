@@ -128,8 +128,13 @@ void anim_reset(int sc, const unsigned char *b, unsigned char *c)
         if (anims[i].scene != sc) continue;
         act[nact] = &anims[i];
         memset(&st[nact], 0, sizeof(AnimState));
-        st[nact].timer = (short)(rand_n(40) + 20);
-        st[nact].phase = (short)(anims[i].type == AN_TALK ? 0 : rand_n(64));
+        if (anims[i].type == AN_TALK) {
+            st[nact].timer = 1;                  /* la bocca parte subito */
+            st[nact].phase = 0;
+        } else {
+            st[nact].timer = (short)(rand_n(40) + 20);
+            st[nact].phase = (short)rand_n(64);
+        }
         nact++;
     }
     for (i = 0; i < MAX_DIM; i++) dim_timer[i] = 0;
@@ -220,16 +225,22 @@ static void fill_bits_row(int y, int x0, int x1, int black)
     }
 }
 
-/* la mandibola scende di k pixel; lo spazio che si apre e' la bocca */
-static void draw_jaw(const Anim *a, int k)
+/* Bocca aperta di k (0 chiusa, 1 socchiusa, 2 aperta): cambiano SOLO i
+   pixel della bocca, sulla riga y0 tra p2 e p3 e sulle due righe sotto.
+   Bocca scura su visi chiari; denti chiari su visi e barbe scure. */
+static void draw_mouth(const Anim *a, int k)
 {
-    int y;
-    for (y = a->y0; y < a->y1; y++) {
-        if (y - k >= a->y0) {
-            copy_bits_row(y, y - k, a->x0, a->x1);              /* mandibola spostata */
+    int y, x0 = a->p2, x1 = a->p3 + 1, light = (a->p1 & TALK_LIGHT) != 0;
+    for (y = a->y0; y < a->y0 + 3; y++)                      /* bocca chiusa */
+        copy_bits_row(y, y, x0, x1);
+    if (k >= 1) fill_bits_row(a->y0, x0 + 1, x1 - 1, !light);
+    if (k >= 2) {
+        if (light) {
+            fill_bits_row(a->y0 + 1, x0, x1, 1);             /* denti sopra e sotto */
+            fill_bits_row(a->y0 + 2, x0 + 1, x1 - 1, 0);
         } else {
-            copy_bits_row(y, y, a->x0, a->x1);
-            fill_bits_row(y, a->p2, a->p3 + 1, !(a->p1 & TALK_LIGHT));   /* bocca aperta */
+            fill_bits_row(a->y0 + 1, x0, x1, 1);
+            fill_bits_row(a->y0 + 2, x0 + 1, x1 - 1, 1);
         }
     }
 }
@@ -242,13 +253,14 @@ static int step_talk(const Anim *a, AnimState *s, int speaker, GRect *r, int *an
         if (--s->timer > 0) return 0;
         s->timer = (short)(2 + rand_n(2));
         want = pattern[rand_n(8)];
+        if (want == s->phase) want = (want + 1) % 3;  /* mentre parla si muove sempre */
     } else {
         want = 0;                                    /* bocca chiusa quando tace */
     }
     if (want == s->phase) return 0;
     s->phase = (short)want;
-    draw_jaw(a, want);
-    grow(r, any, a->x0, a->y0, a->x1, a->y1);
+    draw_mouth(a, want);
+    grow(r, any, a->p2, a->y0, a->p3 + 1, a->y0 + 3);
     return 1;
 }
 

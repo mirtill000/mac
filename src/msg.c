@@ -27,7 +27,10 @@ static void enqueue(int speaker, const char *text, int bytes, int nchar)
     m->nchar = (short)nchar;
     if (msg_count == 0) msg_timer = 0;
     msg_count++;
-    need_full = 1;
+    /* in gioco il box viene aggiornato da update_play_overlays (box_key):
+       ridisegnare tutto lo schermo a ogni battuta era lento */
+    if (mode != MODE_PLAY) need_full = 1;
+    panel_dirty = 1;
 }
 
 /* Un testo che non entra in MSG_LINES righe viene spezzato in piu' box
@@ -251,7 +254,7 @@ void next_msg(void)
         dlg_npc = -1;
         dlg_ending = 0;
     }
-    need_full = 1;
+    if (mode != MODE_PLAY) need_full = 1;
     panel_dirty = 1;
 }
 

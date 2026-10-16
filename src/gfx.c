@@ -163,16 +163,29 @@ static void span_op(int x, int y, int w, int h, const unsigned char *pat, int op
     if (y1 > clip.y1) y1 = clip.y1;
     if (x >= x1 || y >= y1) return;
     gfx_dirty(x, y, x1, y1);
-    for (yy = y; yy < y1; yy++) {
-        unsigned char *row = gfx_fb + yy * FB_RB;
-        int b0 = x >> 3, b1 = (x1 - 1) >> 3, b;
-        unsigned char p = pat ? pat[yy & 7] : 0;
-        for (b = b0; b <= b1; b++) {
-            unsigned char m = 0xFF;
-            if (b == b0) m &= lmask(x);
-            if (b == b1 && (x1 & 7)) m &= rmask(x1);
-            if (op) row[b] ^= m;
-            else row[b] = (unsigned char)((row[b] & ~m) | (p & m));
+    {
+        /* maschere dei byte di bordo calcolate una volta sola; i byte interi
+           in mezzo si scrivono senza maschera (memset per i colori pieni) */
+        int b0 = x >> 3, b1 = (x1 - 1) >> 3, b, n;
+        unsigned char lm = lmask(x), rm = (x1 & 7) ? rmask(x1) : 0xFF;
+        if (b0 == b1) lm &= rm;
+        n = b1 - b0 - 1;
+        for (yy = y; yy < y1; yy++) {
+            unsigned char *row = gfx_fb + yy * FB_RB;
+            unsigned char p = pat ? pat[yy & 7] : 0;
+            if (op) {
+                row[b0] ^= lm;
+                if (b1 > b0) {
+                    for (b = b0 + 1; b < b1; b++) row[b] = (unsigned char)~row[b];
+                    row[b1] ^= rm;
+                }
+            } else {
+                row[b0] = (unsigned char)((row[b0] & ~lm) | (p & lm));
+                if (b1 > b0) {
+                    if (n > 0) memset(row + b0 + 1, p, (size_t)n);
+                    row[b1] = (unsigned char)((row[b1] & ~rm) | (p & rm));
+                }
+            }
         }
     }
 }

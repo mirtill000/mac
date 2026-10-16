@@ -150,6 +150,8 @@ int   choice_at(int x, int y);
 void  build_sentence(char *buf, int max);
 void  draw_sentence(void);
 void  draw_panel(void);
+void  panel_update(void);
+void  panel_invalidate(void);
 void  draw_window(WinRect r, const char *title);
 int   in_close_box(WinRect r, int x, int y);
 void  draw_button(int x, int y, int w, const char *label, int hot, int def);

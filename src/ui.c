@@ -57,11 +57,14 @@ void build_sentence(char *buf, int max)
 }
 
 /* riga della frase ("Usa chiave con cassa") e pulsante Menu */
+static char pc_sentence[96];
+
 void draw_sentence(void)
 {
     char sentence[96];
     gfx_fill(0, SENTENCE_Y, FB_W, PANEL_Y - SENTENCE_Y, PAT_BLACK);
     build_sentence(sentence, sizeof(sentence));
+    strcpy(pc_sentence, sentence);
     text_center(SENTENCE_Y + 1, sentence, FONT_REGULAR, COL_WHITE);
     /* pulsante Menu */
     gfx_frame(MENU_BTN_X, SENTENCE_Y + 1, 48, 13, COL_WHITE);
@@ -79,22 +82,74 @@ void draw_sentence(void)
     sentence_dirty = 0;
 }
 
+/* Il pannello viene ridisegnato a pezzi: si ricorda cosa c'e' a video
+   (stato di ogni verbo, contenuto di ogni casella, scelte del dialogo) e
+   si ridisegna solo cio' che e' cambiato. Su un 68000 ridisegnare tutto il
+   pannello a ogni movimento del mouse rendeva lenta la selezione. */
+static int pc_valid, pc_dialog, pc_nchoices = -1, pc_choice_hover = -1;
+static int pc_verb[V_COUNT];
+static int pc_inv[8];
+
+static int verb_state(int i)
+{
+    return (i == cur_verb ? 1 : 0) | (i == hover_verb ? 2 : 0);
+}
+
+static int inv_state(int i)
+{
+    int it;
+    if (i >= G.ninv) return -1;
+    it = G.inv[i];
+    return it | (it == sel_item ? 0x100 : 0) | (it == IT_CAPPELLO && flag(F_HAT_WORN) ? 0x200 : 0);
+}
+
+static void draw_verb(int i)
+{
+    int sel = i == cur_verb;
+    gfx_fill(VERB_X(i) - 6, VERB_Y(i) - 3, 80, 20, sel ? PAT_WHITE : PAT_BLACK);
+    gfx_text(VERB_X(i), VERB_Y(i), panel_verbs[i],
+             (i == hover_verb || sel) ? FONT_BOLD : FONT_REGULAR, sel ? COL_BLACK : COL_WHITE);
+    pc_verb[i] = verb_state(i);
+}
+
+static void draw_inv(int i)
+{
+    int x = INV_X(i), y = INV_Y(i);
+    gfx_fill(x, y, 56, 38, PAT_BLACK);
+    gfx_frame(x, y, 56, 38, COL_WHITE);
+    if (i < G.ninv) {
+        int it = G.inv[i];
+        gfx_fill(x + 2, y + 2, 52, 34, PAT_WHITE);
+        gfx_bitmap(&asset_icon_small[it], x + 12, y + 3);
+        if (it == IT_CAPPELLO && flag(F_HAT_WORN)) gfx_glyph(x + 45, y + 2, '*', FONT_BOLD, COL_BLACK);
+        if (it == sel_item) gfx_invert(x + 2, y + 2, 52, 34);
+    }
+    pc_inv[i] = inv_state(i);
+}
+
+static void draw_choice(int i)
+{
+    gfx_fill(0, CHOICE_Y(i) - 1, FB_W, 16, PAT_BLACK);
+    gfx_text(16, CHOICE_Y(i), dlg_texts[i], i == hover_choice ? FONT_BOLD : FONT_REGULAR, COL_WHITE);
+}
+
 void draw_panel(void)
 {
     int i;
 
     draw_sentence();
     gfx_fill(0, PANEL_Y, FB_W, FB_H - PANEL_Y, PAT_BLACK);
+    pc_valid = 1;
+    pc_dialog = dlg_npc >= 0;
 
     if (dlg_npc >= 0) {
+        pc_nchoices = 0;
         if (!msg_count) {
             dlg_n = dialog_options(dlg_npc, dlg_ids, dlg_texts);
-            for (i = 0; i < dlg_n; i++) {
-                gfx_text(16, CHOICE_Y(i), dlg_texts[i], i == hover_choice ? FONT_BOLD : FONT_REGULAR, COL_WHITE);
-                if (i == hover_choice) gfx_glyph(6, CHOICE_Y(i), '>', FONT_BOLD, COL_WHITE);
-            }
+            for (i = 0; i < dlg_n; i++) draw_choice(i);
+            pc_nchoices = dlg_n;
         }
-        gfx_dirty(0, SENTENCE_Y, FB_W, FB_H);
+        pc_choice_hover = hover_choice;
         return;
     }
 
@@ -102,28 +157,46 @@ void draw_panel(void)
     gfx_frame(4, PANEL_Y + 2, 264, FB_H - PANEL_Y - 5, COL_WHITE);
     gfx_vline(94, PANEL_Y + 8, FB_H - 9, COL_WHITE);
     gfx_vline(182, PANEL_Y + 8, FB_H - 9, COL_WHITE);
-    for (i = 0; i < V_COUNT; i++) {
-        int sel = i == cur_verb;
-        if (sel) gfx_fill(VERB_X(i) - 6, VERB_Y(i) - 3, 80, 20, PAT_WHITE);
-        gfx_text(VERB_X(i), VERB_Y(i), panel_verbs[i],
-                 (i == hover_verb || sel) ? FONT_BOLD : FONT_REGULAR, sel ? COL_BLACK : COL_WHITE);
-    }
+    for (i = 0; i < V_COUNT; i++) draw_verb(i);
 
     /* inventario */
     gfx_frame(272, PANEL_Y + 2, 236, FB_H - PANEL_Y - 5, COL_WHITE);
-    for (i = 0; i < 8; i++) {
-        int x = INV_X(i), y = INV_Y(i);
-        gfx_frame(x, y, 56, 38, COL_WHITE);
-        if (i < G.ninv) {
-            int it = G.inv[i];
-            gfx_fill(x + 2, y + 2, 52, 34, PAT_WHITE);
-            gfx_bitmap(&asset_icon_small[it], x + 12, y + 3);
-            if (it == IT_CAPPELLO && flag(F_HAT_WORN)) gfx_glyph(x + 45, y + 2, '*', FONT_BOLD, COL_BLACK);
-            if (it == sel_item) gfx_invert(x + 2, y + 2, 52, 34);
-        }
-    }
-    gfx_dirty(0, SENTENCE_Y, FB_W, FB_H);
+    for (i = 0; i < 8; i++) draw_inv(i);
 }
+
+/* aggiornamento minimo del pannello */
+void panel_update(void)
+{
+    char sentence[96];
+    int i;
+    if (!pc_valid || pc_dialog != (dlg_npc >= 0)) {
+        draw_panel();
+        return;
+    }
+    build_sentence(sentence, sizeof(sentence));
+    if (sentence_dirty || strcmp(sentence, pc_sentence) != 0) draw_sentence();
+    if (dlg_npc >= 0) {
+        int n = msg_count ? 0 : dialog_options(dlg_npc, dlg_ids, dlg_texts);
+        if (n != pc_nchoices) {                     /* scelte comparse o sparite */
+            draw_panel();
+            return;
+        }
+        if (!msg_count) dlg_n = n;
+        if (hover_choice != pc_choice_hover) {
+            if (pc_choice_hover >= 0 && pc_choice_hover < n) draw_choice(pc_choice_hover);
+            if (hover_choice >= 0 && hover_choice < n) draw_choice(hover_choice);
+            pc_choice_hover = hover_choice;
+        }
+        return;
+    }
+    for (i = 0; i < V_COUNT; i++)
+        if (verb_state(i) != pc_verb[i]) draw_verb(i);
+    for (i = 0; i < 8; i++)
+        if (inv_state(i) != pc_inv[i]) draw_inv(i);
+}
+
+/* da chiamare quando lo schermo viene ridisegnato da zero */
+void panel_invalidate(void) { pc_valid = 0; }
 
 
 /* ------------------------------------------------------------------ */

@@ -155,7 +155,8 @@ dei messaggi mai piena.
 Il motore è C portabile e non chiama mai il Toolbox: disegna in un
 framebuffer che sul Mac viene copiato a video con un solo `CopyBits`.
 Per restare veloce su un 68000 a 8 MHz ridisegna ogni fotogramma solo le zone
-cambiate (protagonista, box dei dialoghi, pannello, zone animate) e le porta a
+cambiate (protagonista, box dei dialoghi, zone animate; nel pannello solo il
+verbo o la casella dell'inventario che cambia) e le porta a
 video con più `CopyBits` piccoli invece di uno grande. Le animazioni
 lavorano su una copia dello sfondo, così il protagonista ci passa davanti
 senza sfarfallii; le zone animate sono elencate in `src/script.c`

@@ -323,8 +323,7 @@ void game_render(void)
         if (need_full) render_full();
     } else {
         update_play_overlays();
-        if (panel_dirty) { draw_panel(); panel_dirty = 0; }
-        else if (sentence_dirty) draw_sentence();
+        if (panel_dirty || sentence_dirty) { panel_update(); panel_dirty = 0; sentence_dirty = 0; }
     }
     if (!need_full && modal == MODAL_NONE && mode == MODE_MAP && cur_msg() && cur_msg()->text &&
         box_prev_valid && tri_shown != (int)((frame_count / 8) & 1))
