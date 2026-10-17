@@ -313,42 +313,57 @@ static const unsigned char beam_pat[3][4] = {
     { 0xEE, 0xBB, 0xEE, 0xBB },           /* 75% */
 };
 
-static int step_beam(const Anim *a, AnimState *s, GRect *r, int *any)
+static int step_beam(const Anim *a, AnimState *s, int idx, GRect *r, int *any)
 {
     int cx = (a->x0 + a->x1) / 2, cy = (a->y0 + a->y1) / 2;
     int rx = (a->x1 - a->x0) / 2, ry = (a->y1 - a->y0) / 2;
-    int n = a->p1 > 0 ? a->p1 : 10, span = 2 * rx + 36, bx, y;
-    int bx0 = a->x0 >> 3, nb = (a->x1 - a->x0) >> 3;
+    int n = a->p1 > 0 ? a->p1 : 10, span = 2 * rx + 36, bx, y, c;
+    int bx0 = a->x0 >> 3, nb = (a->x1 - a->x0) >> 3, c0, c1, o0, o1;
+    signed char *half = wave_dx[idx];        /* meta' larghezza dell'ellisse per riga */
     if (--s->timer > 0) return 0;
     s->timer = (short)(a->p3 > 0 ? a->p3 : 3);
+    if (half[0] == 127) {                    /* prima volta: la tabella */
+        for (y = a->y0; y < a->y1 && y - a->y0 < WAVE_ROWS; y++) {
+            long dy = y - cy, q = (long)rx * rx - (long)rx * rx * dy * dy / ((long)ry * ry);
+            int h = 0;
+            while (q > 0 && (long)(h + 1) * (h + 1) <= q) h++;
+            half[y - a->y0] = (signed char)h;
+        }
+        s->fx = 0;                           /* nessuna fascia ancora a video */
+        s->fy = 0;
+    }
     s->phase = (short)((s->phase + 1) % n);
     bx = cx - rx - 18 + span * s->phase / n;
-    for (y = a->y0; y < a->y1; y++) {
+    /* byte toccati dalla nuova fascia; quelli della vecchia si rimettono */
+    c0 = (bx - 18 - a->x0 - 7) >> 3;
+    c1 = ((bx + 18 - a->x0) >> 3) + 1;
+    if (c0 < 0) c0 = 0;
+    if (c1 > nb) c1 = nb;
+    o0 = s->fx;
+    o1 = s->fy;
+    for (y = a->y0; y < a->y1 && y - a->y0 < WAVE_ROWS; y++) {
         unsigned char *d = cur + y * FB_RB + bx0;
         const unsigned char *b = base + y * FB_RB + bx0;
-        long dy = y - cy;
-        int half, xl, xr, c;
-        memcpy(d, b, nb);
-        /* meta' larghezza dell'ellisse a questa riga */
-        {
-            long q = (long)rx * rx - (long)rx * rx * dy * dy / ((long)ry * ry);
-            if (q <= 0) continue;
-            for (half = 0; (long)(half + 1) * (half + 1) <= q; half++) ;
-        }
-        xl = cx - half;
-        xr = cx + half;
-        for (c = 0; c < nb; c++) {
+        int h = half[y - a->y0], xl = cx - h, xr = cx + h;
+        if (h <= 0) continue;
+        for (c = o0; c < o1; c++) d[c] = b[c];
+        for (c = c0; c < c1; c++) {
             int x = a->x0 + c * 8, dist = x + 4 - bx, lv;
             unsigned char m = 0xFF;
             if (dist < 0) dist = -dist;
             lv = dist < 6 ? 2 : dist < 12 ? 1 : dist < 18 ? 0 : -1;
-            if (lv < 0 || x + 8 <= xl || x >= xr) continue;
+            if (lv < 0 || x + 8 <= xl || x >= xr) { d[c] = b[c]; continue; }
             if (x < xl) m &= (unsigned char)(0xFF >> (xl - x));
             if (x + 8 > xr) m &= (unsigned char)(0xFF << (x + 8 - xr));
             d[c] = (unsigned char)(b[c] | (beam_pat[lv][y & 3] & m));
         }
     }
-    grow(r, any, a->x0, a->y0, a->x1, a->y1);
+    s->fx = (short)c0;
+    s->fy = (short)c1;
+    if (o1 <= o0) { o0 = c0; o1 = c1; }
+    if (c0 < o0) o0 = c0;
+    if (c1 > o1) o1 = c1;
+    if (o1 > o0) grow(r, any, a->x0 + o0 * 8, a->y0, a->x0 + o1 * 8, a->y1);
     return 1;
 }
 
@@ -466,7 +481,7 @@ int anim_step(int speaker, const GRect *avoid, GRect *out, int max)
         case AN_FLYER:   step_flyer(a, &st[i], &r, &any); break;
         case AN_TALK:    step_talk(a, &st[i], speaker, &r, &any); break;
         case AN_FALL:    step_fall(a, &st[i], &r, &any); break;
-        case AN_BEAM:    step_beam(a, &st[i], &r, &any); break;
+        case AN_BEAM:    step_beam(a, &st[i], i, &r, &any); break;
         }
         if (!any) continue;
         if (n < max) {

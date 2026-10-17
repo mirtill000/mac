@@ -64,6 +64,10 @@ extern int modal_sel, map_hover;
 /* rendering */
 extern unsigned char bgbuf[FB_H * FB_RB], basebuf[FB_H * FB_RB];
 extern int need_full, need_rebuild, panel_dirty, sentence_dirty;
+extern int need_modal;         /* finestra aperta, chiusa o cambiata */
+extern int need_modal_hover;   /* nella finestra cambia solo l'evidenziazione */
+extern int need_title_menu;    /* titolo: cambia la voce evidenziata */
+extern int panel_shown;        /* a video c'e' il pannello del gioco, aggiornato */
 extern GRect hero_prev, box_prev;
 extern int hero_prev_valid, box_prev_valid;
 extern long hero_prev_key, box_prev_key;
@@ -149,6 +153,7 @@ int   inv_at(int x, int y);
 int   choice_at(int x, int y);
 void  build_sentence(char *buf, int max);
 void  draw_sentence(void);
+void  menu_button_off(void);
 void  draw_panel(void);
 void  panel_update(void);
 void  panel_invalidate(void);
@@ -164,12 +169,14 @@ int   options_at(int x, int y);
 void  draw_inventory_window(void);
 int   invwin_at(int x, int y);
 void  draw_modal(void);
+void  modal_hover_update(void);
 void  open_modal(int m);
 int   title_at(int x, int y);
 void  draw_title_menu(void);
 void  draw_title(void);
 int   map_at(int x, int y);
 void  draw_map(void);
+void  map_hover_changed(int old);
 void  draw_end(void);
 
 /* --- engine.c: rendering e protagonista --- */

@@ -58,6 +58,15 @@ void build_sentence(char *buf, int max)
 
 /* riga della frase ("Usa chiave con cassa") e pulsante Menu */
 static char pc_sentence[96];
+int menu_lit;                      /* il pulsante Menu e' evidenziato a video */
+
+/* spegne il pulsante Menu senza ridisegnare tutta la riga */
+void menu_button_off(void)
+{
+    if (!menu_lit) return;
+    gfx_invert(MENU_BTN_X + 1, SENTENCE_Y + 2, 46, 11);
+    menu_lit = 0;
+}
 
 void draw_sentence(void)
 {
@@ -69,7 +78,8 @@ void draw_sentence(void)
     /* pulsante Menu */
     gfx_frame(MENU_BTN_X, SENTENCE_Y + 1, 48, 13, COL_WHITE);
     gfx_text(MENU_BTN_X + 10, SENTENCE_Y, "Menu", FONT_REGULAR, COL_WHITE);
-    if (hover_menu == 0) gfx_invert(MENU_BTN_X + 1, SENTENCE_Y + 2, 46, 11);
+    menu_lit = hover_menu == 0 && modal == MODAL_NONE;   /* con una finestra, hover_menu e' suo */
+    if (menu_lit) gfx_invert(MENU_BTN_X + 1, SENTENCE_Y + 2, 46, 11);
     if (perf_on) {
         char perf[32];
         perf[0] = 0;
@@ -88,6 +98,7 @@ void draw_sentence(void)
    pannello a ogni movimento del mouse rendeva lenta la selezione. */
 static int pc_valid, pc_dialog, pc_nchoices = -1, pc_choice_hover = -1;
 static int pc_verb[V_COUNT];
+static const char *pc_choice[MAX_CHOICES];   /* testo delle scelte a video */
 static int pc_inv[8];
 
 static int verb_state(int i)
@@ -141,6 +152,7 @@ static void draw_choice(int i)
 {
     gfx_fill(0, CHOICE_Y(i) - 1, FB_W, 16, PAT_BLACK);
     gfx_text(16, CHOICE_Y(i), dlg_texts[i], i == hover_choice ? FONT_BOLD : FONT_REGULAR, COL_WHITE);
+    pc_choice[i] = dlg_texts[i];
 }
 
 void draw_panel(void)
@@ -192,6 +204,9 @@ void panel_update(void)
             return;
         }
         if (!msg_count) dlg_n = n;
+        for (i = 0; i < n; i++)                    /* stesse scelte, testo diverso */
+            if (dlg_texts[i] != pc_choice[i] && i != hover_choice && i != pc_choice_hover)
+                draw_choice(i);
         if (hover_choice != pc_choice_hover) {
             if (pc_choice_hover >= 0 && pc_choice_hover < n) draw_choice(pc_choice_hover);
             if (hover_choice >= 0 && hover_choice < n) draw_choice(hover_choice);
@@ -257,12 +272,16 @@ static const char *const pause_items[] = {
 #define PAUSE_N 7
 const WinRect pause_win = {156, 40, 200, 214};
 
+static void pause_button(int i)
+{
+    draw_button(pause_win.x + 20, pause_win.y + 32 + i * 25, 160, pause_items[i], i == hover_menu, 0);
+}
+
 void draw_pause(void)
 {
     int i;
     draw_window(pause_win, "Menu");
-    for (i = 0; i < PAUSE_N; i++)
-        draw_button(pause_win.x + 20, pause_win.y + 32 + i * 25, 160, pause_items[i], i == hover_menu, 0);
+    for (i = 0; i < PAUSE_N; i++) pause_button(i);
 }
 
 int pause_at(int x, int y)
@@ -276,24 +295,34 @@ int pause_at(int x, int y)
 /* --- salva / carica --- */
 const WinRect save_win = {40, 50, 432, 220};
 
-void draw_saveload(void)
+/* una riga della lista (i < SAVE_SLOTS) o un pulsante (100, 101) */
+static void saveload_item(int i)
 {
-    int i;
     char buf[80];
-    int saving = modal == MODAL_SAVE;
-    draw_window(save_win, saving ? "Salva Partita" : "Carica Partita");
-    gfx_frame(save_win.x + 12, save_win.y + 32, save_win.w - 24, 8 * 17 + 6, COL_BLACK);
-    for (i = 0; i < SAVE_SLOTS; i++) {
+    if (i >= 0 && i < SAVE_SLOTS) {
         int y = save_win.y + 35 + i * 17;
+        gfx_fill(save_win.x + 14, y, save_win.w - 28, 16, PAT_WHITE);
         slot_label(i, buf, sizeof(buf));
         gfx_text(save_win.x + 20, y + 1, buf, FONT_REGULAR, COL_BLACK);
         if (i == modal_sel) gfx_invert(save_win.x + 14, y, save_win.w - 28, 16);
         else if (i == hover_menu) gfx_frame(save_win.x + 14, y, save_win.w - 28, 16, COL_BLACK);
+    } else if (i == 100) {
+        draw_button(save_win.x + save_win.w - 112, save_win.y + save_win.h - 34, 96,
+                    modal == MODAL_SAVE ? "Salva" : "Carica", hover_menu == 100, 1);
+    } else if (i == 101) {
+        draw_button(save_win.x + save_win.w - 222, save_win.y + save_win.h - 34, 96,
+                    "Annulla", hover_menu == 101, 0);
     }
-    draw_button(save_win.x + save_win.w - 112, save_win.y + save_win.h - 34, 96,
-                saving ? "Salva" : "Carica", hover_menu == 100, 1);
-    draw_button(save_win.x + save_win.w - 222, save_win.y + save_win.h - 34, 96,
-                "Annulla", hover_menu == 101, 0);
+}
+
+void draw_saveload(void)
+{
+    int i;
+    draw_window(save_win, modal == MODAL_SAVE ? "Salva Partita" : "Carica Partita");
+    gfx_frame(save_win.x + 12, save_win.y + 32, save_win.w - 24, 8 * 17 + 6, COL_BLACK);
+    for (i = 0; i < SAVE_SLOTS; i++) saveload_item(i);
+    saveload_item(100);
+    saveload_item(101);
 }
 
 int saveload_at(int x, int y)
@@ -310,15 +339,24 @@ int saveload_at(int x, int y)
 const WinRect opt_win = {116, 90, 280, 120};
 static const char *const speed_names[3] = {"Lenta", "Normale", "Veloce"};
 
-void draw_options(void)
+static void options_item(int i)
 {
     char buf[48];
+    if (i == 0) {
+        buf[0] = 0;
+        str_cat(buf, "Velocità del testo: ", sizeof(buf));
+        str_cat(buf, speed_names[text_speed], sizeof(buf));
+        draw_button(opt_win.x + 20, opt_win.y + 38, 240, buf, hover_menu == 0, 0);
+    } else if (i == 1) {
+        draw_button(opt_win.x + 160, opt_win.y + 80, 100, "OK", hover_menu == 1, 1);
+    }
+}
+
+void draw_options(void)
+{
     draw_window(opt_win, "Opzioni");
-    buf[0] = 0;
-    str_cat(buf, "Velocità del testo: ", sizeof(buf));
-    str_cat(buf, speed_names[text_speed], sizeof(buf));
-    draw_button(opt_win.x + 20, opt_win.y + 38, 240, buf, hover_menu == 0, 0);
-    draw_button(opt_win.x + 160, opt_win.y + 80, 100, "OK", hover_menu == 1, 1);
+    options_item(0);
+    options_item(1);
 }
 
 int options_at(int x, int y)
@@ -333,12 +371,11 @@ const WinRect inv_win = {48, 30, 416, 240};
 #define INVW_X(i) (inv_win.x + 10 + ((i) % 4) * 99)
 #define INVW_Y(i) (inv_win.y + 28 + ((i) / 4) * 102)
 
-void draw_inventory_window(void)
+static void invwin_item(int i)
 {
-    int i;
-    draw_window(inv_win, "Inventario");
-    for (i = 0; i < 8; i++) {
+    if (i >= 0 && i < 8) {
         int x = INVW_X(i), y = INVW_Y(i);
+        gfx_fill(x + 1, y + 1, 96, 99, PAT_WHITE);
         gfx_frame(x, y, 98, 101, COL_BLACK);
         if (i < G.ninv) {
             int it = G.inv[i];
@@ -350,6 +387,13 @@ void draw_inventory_window(void)
     }
 }
 
+void draw_inventory_window(void)
+{
+    int i;
+    draw_window(inv_win, "Inventario");
+    for (i = 0; i < 8; i++) invwin_item(i);
+}
+
 int invwin_at(int x, int y)
 {
     int i;
@@ -358,8 +402,30 @@ int invwin_at(int x, int y)
     return -1;
 }
 
+/* Cambia solo l'evidenziazione: si ridisegnano il vecchio e il nuovo
+   elemento, non tutta la finestra. */
+static int drawn_hover = -1;
+
+void modal_hover_update(void)
+{
+    int k;
+    for (k = 0; k < 2; k++) {
+        int i = k ? hover_menu : drawn_hover;
+        if (i < 0 || (k && i == drawn_hover)) continue;
+        switch (modal) {
+        case MODAL_PAUSE:     if (i < PAUSE_N) pause_button(i); break;
+        case MODAL_SAVE:
+        case MODAL_LOAD:      saveload_item(i); break;
+        case MODAL_OPTIONS:   options_item(i); break;
+        case MODAL_INVENTORY: invwin_item(i); break;
+        }
+    }
+    drawn_hover = hover_menu;
+}
+
 void draw_modal(void)
 {
+    drawn_hover = hover_menu;
     switch (modal) {
     case MODAL_PAUSE:     draw_pause(); break;
     case MODAL_SAVE:
@@ -376,7 +442,7 @@ void open_modal(int m)
     hover_menu = -1;
     if (m == MODAL_SAVE || m == MODAL_LOAD) refresh_slots();
     walking = 0;
-    need_full = 1;
+    need_modal = 1;
 }
 
 
@@ -430,28 +496,67 @@ int map_at(int x, int y)
     return -1;
 }
 
-void draw_map(void)
+#define MAP_H 282
+
+static void map_frame(int i)
 {
-    gfx_fill(0, 0, FB_W, MAP_Y, PAT_BLACK);
-    gfx_fill(0, MAP_Y + 282, FB_W, FB_H - MAP_Y - 282, PAT_BLACK);
-    memcpy(gfx_fb + MAP_Y * FB_RB, bgbuf, 282 * FB_RB);
-    script_draw_map();
-    text_center(8, "Mappa di Puerto Polli", FONT_BOLD, COL_WHITE);
+    const MapPlace *p = &map_places[i];
+    gfx_frame(p->x - 1, MAP_Y + p->y - 1, p->w + 2, p->h + 2, COL_BLACK);
+    gfx_frame(p->x, MAP_Y + p->y, p->w, p->h, COL_BLACK);
+}
+
+static void map_footer(void)
+{
+    gfx_fill(0, MAP_Y + MAP_H, FB_W, FB_H - MAP_Y - MAP_H, PAT_BLACK);
     if (map_hover >= 0) {
-        const MapPlace *p = &map_places[map_hover];
-        gfx_frame(p->x - 1, MAP_Y + p->y - 1, p->w + 2, p->h + 2, COL_BLACK);
-        gfx_frame(p->x, MAP_Y + p->y, p->w, p->h, COL_BLACK);
-        {
-            char buf[48];
-            buf[0] = 0;
-            str_cat(buf, "Vai a: ", sizeof(buf));
-            str_cat(buf, p->name, sizeof(buf));
-            text_center(MAP_Y + 290, buf, FONT_BOLD, COL_WHITE);
-        }
+        char buf[48];
+        buf[0] = 0;
+        str_cat(buf, "Vai a: ", sizeof(buf));
+        str_cat(buf, map_places[map_hover].name, sizeof(buf));
+        text_center(MAP_Y + 290, buf, FONT_BOLD, COL_WHITE);
     } else {
         text_center(MAP_Y + 290, "Scegli una destinazione  (clic fuori per tornare)", FONT_REGULAR, COL_WHITE);
     }
+}
+
+void draw_map(void)
+{
+    gfx_fill(0, 0, FB_W, MAP_Y, PAT_BLACK);
+    memcpy(gfx_fb + MAP_Y * FB_RB, bgbuf, MAP_H * FB_RB);
+    script_draw_map();
+    text_center(8, "Mappa di Puerto Polli", FONT_BOLD, COL_WHITE);
+    if (map_hover >= 0) map_frame(map_hover);
+    map_footer();
     gfx_dirty_all();
+}
+
+/* Cambia il luogo evidenziato: si rimette la mappa solo attorno al vecchio
+   luogo, si incornicia il nuovo e si riscrive la didascalia. */
+void map_hover_changed(int old)
+{
+    int k;
+    if (need_full || need_rebuild || modal != MODAL_NONE || (cur_msg() && cur_msg()->text)) {
+        need_full = 1;                 /* c'e' altro da ridisegnare (o un box sopra) */
+        return;
+    }
+    for (k = 0; k < 2; k++) {
+        int i = k ? map_hover : old, y, y0, y1, b0, b1;
+        const MapPlace *p;
+        if (i < 0) continue;
+        p = &map_places[i];
+        y0 = p->y - 1 < 0 ? 0 : p->y - 1;
+        y1 = p->y + p->h + 1 > MAP_H ? MAP_H : p->y + p->h + 1;
+        b0 = (p->x - 1) >> 3;
+        b1 = (p->x + p->w + 1 + 7) >> 3;
+        if (b0 < 0) b0 = 0;
+        if (b1 > FB_RB) b1 = FB_RB;
+        for (y = y0; y < y1; y++)
+            memcpy(gfx_fb + (MAP_Y + y) * FB_RB + b0, bgbuf + y * FB_RB + b0, (size_t)(b1 - b0));
+        gfx_dirty(b0 * 8, MAP_Y + y0, b1 * 8, MAP_Y + y1);
+    }
+    script_draw_map();                 /* la grotta, se scoperta, sta sulla mappa */
+    if (map_hover >= 0) map_frame(map_hover);
+    map_footer();
 }
 
 void draw_end(void)

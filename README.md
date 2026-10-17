@@ -195,7 +195,10 @@ video con più `CopyBits` piccoli invece di uno grande. Il protagonista si
 disegna una riga intera alla volta (senza controlli per ogni byte), le onde
 ricalcolano solo le righe che cambiano davvero, la lente del faro è
 calcolata durante il gioco invece di essere salvata, e sotto le finestre
-(pausa, salvataggio) le animazioni si fermano. Le parti che non incidono
+(pausa, salvataggio) le animazioni si fermano. Aprendo una finestra si
+salva la fascia di schermo che copre e chiudendola la si rimette; nei menu,
+sulla mappa e nel titolo si ridisegnano solo le voci che cambiano
+evidenziazione, e nel cambio di stanza il pannello resta com'è. Le parti che non incidono
 sulla velocità (storia, finestre, salvataggi) sono compilate con `-Os`. Le animazioni
 lavorano su una copia dello sfondo, così il protagonista ci passa davanti
 senza sfarfallii; le zone animate sono elencate in `src/script.c`

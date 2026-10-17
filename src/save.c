@@ -187,6 +187,7 @@ void do_load(int slot)
     }
     clear_interaction();
     modal = MODAL_NONE;
+    modal_from_title = 0;
     mode = MODE_PLAY;
     need_rebuild = 1;
     need_full = 1;
@@ -203,6 +204,7 @@ void new_game(void)
 {
     memset(&G, 0, sizeof(G));
     clear_interaction();
+    modal_from_title = 0;
     G.room = ROOM_DOCK;
     mode = MODE_PLAY;
     go_room(ROOM_DOCK);

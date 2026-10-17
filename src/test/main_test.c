@@ -664,6 +664,11 @@ int main(int argc, char **argv)
     frames(2);
     CHECK(game_debug(DBG_ROOM, 0) == ROOM_BEACH && game_debug(DBG_FLAG, F_HAT_WORN) &&
           !game_debug(DBG_FLAG, F_GAME_WON), "partita caricata");
+    game_key(KEY_ESC, 0);      /* caricata dal titolo: Esc deve aprire la pausa */
+    frames(2);
+    CHECK(game_debug(DBG_MODAL, 0) == 1, "Esc apre la pausa dopo il caricamento dal titolo");
+    game_key(KEY_ESC, 0);
+    frames(2);
     game_key(KEY_TAB, 0);
     frames(2);
     shot("14_inventario");

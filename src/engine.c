@@ -52,6 +52,73 @@ int map_hover = -1;
 unsigned char bgbuf[FB_H * FB_RB];
 unsigned char basebuf[FB_H * FB_RB];
 int need_full = 1, need_rebuild = 1, panel_dirty = 1;
+int need_modal, need_modal_hover, need_title_menu, panel_shown;
+
+/* Sotto le finestre (pausa, salvataggio...) il gioco e' fermo: quando se ne
+   apre una si salva la fascia di schermo che possono coprire, e quando si
+   chiude la si rimette. Cosi' aprire, chiudere ed evidenziare un pulsante
+   non ridisegna piu' tutto lo schermo. */
+#define UNDER_Y0 28
+#define UNDER_Y1 278
+static unsigned char under[(UNDER_Y1 - UNDER_Y0) * FB_RB];
+static int modal_drawn = MODAL_NONE;     /* la finestra che c'e' a video */
+
+static WinRect modal_rect(int m)
+{
+    switch (m) {
+    case MODAL_PAUSE:   return pause_win;
+    case MODAL_OPTIONS: return opt_win;
+    case MODAL_INVENTORY: return inv_win;
+    default:            return save_win;
+    }
+}
+
+static void save_under(void)
+{
+    memcpy(under, gfx_fb + UNDER_Y0 * FB_RB, sizeof(under));
+}
+
+/* rimette quello che c'era sotto la finestra (ombra compresa) */
+static void restore_under(int m)
+{
+    WinRect r = modal_rect(m);
+    int y, y0 = r.y, y1 = r.y + r.h + 3, b0 = r.x >> 3, b1 = (r.x + r.w + 3 + 7) >> 3;
+    if (y0 < UNDER_Y0) y0 = UNDER_Y0;
+    if (y1 > UNDER_Y1) y1 = UNDER_Y1;
+    if (b1 > FB_RB) b1 = FB_RB;
+    for (y = y0; y < y1; y++)
+        memcpy(gfx_fb + y * FB_RB + b0, under + (y - UNDER_Y0) * FB_RB + b0, (size_t)(b1 - b0));
+    gfx_dirty(b0 * 8, y0, b1 * 8, y1);
+}
+
+/* aggiornamento delle sole finestre */
+static void modal_update(void)
+{
+    need_modal = 0;
+    need_modal_hover = 0;
+    if (modal == MODAL_NONE && modal_drawn == MODAL_NONE) return;   /* niente da fare */
+    if (modal_drawn == MODAL_NONE && modal != MODAL_NONE) {
+        /* si apre: lo schermo sotto e' giusto, tranne le evidenziazioni
+           (pulsante Menu, voce del titolo) che con la finestra si spengono */
+        if (mode == MODE_PLAY) menu_button_off();
+        if (mode == MODE_TITLE) draw_title_menu();
+        save_under();
+        panel_shown = 0;
+    } else if (modal_drawn != MODAL_NONE && modal_drawn != modal) {
+        restore_under(modal_drawn);          /* si chiude o si passa a un'altra */
+    }
+    if (modal != MODAL_NONE) {
+        draw_modal();
+    } else {
+        /* di nuovo il gioco (o il titolo): l'evidenziazione del pulsante
+           Menu o del titolo era quella di prima della finestra */
+        hover_menu = -1;                     /* era della finestra; il pulsante Menu e' spento */
+        if (mode == MODE_TITLE) draw_title_menu();
+        if (mode == MODE_PLAY) panel_shown = 1;
+        mouse_x = -1;
+    }
+    modal_drawn = modal;
+}
 int sentence_dirty;
 GRect hero_prev, box_prev;
 int hero_prev_valid, box_prev_valid;
@@ -310,8 +377,13 @@ static void draw_debug_overlay(void)
 
 void render_full(void)
 {
+    int keep_panel = panel_shown && mode == MODE_PLAY && modal == MODAL_NONE;
     if (need_rebuild) rebuild_background();
     need_full = 0;
+    need_modal = 0;
+    need_modal_hover = 0;
+    need_title_menu = 0;
+    panel_shown = 0;
     anim_nrects = 0;
     gfx_noclip();
     switch (mode) {
@@ -330,12 +402,25 @@ void render_full(void)
         gfx_dirty(0, 0, FB_W, SCENE_H);
         draw_play_overlays();
         if (debug_overlay) draw_debug_overlay();
-        draw_panel();
+        if (keep_panel) {
+            /* cambio di stanza: il pannello e' gia' a video, si aggiorna
+               solo cio' che cambia (di solito niente) */
+            draw_sentence();
+            panel_update();
+        } else {
+            draw_panel();
+        }
         panel_dirty = 0;
+        sentence_dirty = 0;
+        if (modal == MODAL_NONE) panel_shown = 1;
         break;
     }
-    if (modal != MODAL_NONE) draw_modal();
-    gfx_dirty_all();
+    if (modal != MODAL_NONE) {
+        save_under();                        /* per quando la finestra si chiude */
+        draw_modal();
+    }
+    modal_drawn = modal;
+    if (!keep_panel) gfx_dirty_all();
 }
 
 /* contatore delle prestazioni (Mela-F / Ctrl-F) */
@@ -351,6 +436,15 @@ void game_render(void)
     int presented = 0;
     if (need_rebuild) { rebuild_background(); need_full = 1; }
     if (debug_overlay && mode == MODE_PLAY && modal == MODAL_NONE) need_full = 1;   /* sempre tutto */
+    if (!need_full && need_modal) modal_update();
+    if (!need_full && need_modal_hover) {
+        need_modal_hover = 0;
+        if (modal != MODAL_NONE && modal == modal_drawn) modal_hover_update();
+    }
+    if (!need_full && need_title_menu && mode == MODE_TITLE && modal == MODAL_NONE) {
+        need_title_menu = 0;
+        draw_title_menu();
+    }
     if (need_full || modal != MODAL_NONE || mode != MODE_PLAY) {
         /* le finestre e le schermate fisse si ridisegnano solo se serve */
         if (need_full) render_full();
@@ -411,17 +505,21 @@ void game_mouse(int x, int y)
         case MODAL_OPTIONS:   v = options_at(x, y); break;
         default:              v = invwin_at(x, y); if (v >= G.ninv) v = -1; break;
         }
-        if (v != hover_menu) { hover_menu = v; need_full = 1; }
+        if (v != hover_menu) { hover_menu = v; need_modal_hover = 1; }
         return;
     }
     switch (mode) {
     case MODE_TITLE:
         v = title_at(x, y);
-        if (v != hover_menu) { hover_menu = v; need_full = 1; }
+        if (v != hover_menu) { hover_menu = v; need_title_menu = 1; }
         break;
     case MODE_MAP:
         v = map_at(x, y);
-        if (v != map_hover) { map_hover = v; need_full = 1; }
+        if (v != map_hover) {
+            int old = map_hover;
+            map_hover = v;
+            map_hover_changed(old);              /* solo i due luoghi e la didascalia */
+        }
         break;
     case MODE_PLAY: {
         int obj = hotspot_at(x, y), vb = -1, ch, mb;
@@ -504,7 +602,7 @@ void click_modal(int x, int y)
         break;
     }
     hover_menu = -1;
-    need_full = 1;
+    need_modal = 1;          /* chi cambia la partita (carica, titolo) chiede need_full */
     mouse_x = -1;
     game_mouse(x, y);
 }
@@ -601,8 +699,10 @@ void game_key(int ch, int command)
         return;
     }
     if (ch == KEY_ESC) {
-        if (modal == MODAL_PAUSE || modal_from_title) { modal = MODAL_NONE; need_full = 1; }
-        else if (modal != MODAL_NONE) { modal = MODAL_PAUSE; need_full = 1; }
+        /* modal_from_title conta solo con una finestra aperta: dopo aver
+           caricato dal titolo Esc deve aprire la pausa */
+        if (modal == MODAL_PAUSE || (modal != MODAL_NONE && modal_from_title)) { modal = MODAL_NONE; need_modal = 1; }
+        else if (modal != MODAL_NONE) { modal = MODAL_PAUSE; need_modal = 1; }
         else if (mode == MODE_PLAY) open_modal(MODAL_PAUSE);
         else if (mode == MODE_MAP) { mode = MODE_PLAY; need_rebuild = 1; }
         return;
@@ -700,7 +800,7 @@ int game_debug(int what, int arg)
     case DBG_ROOM:   return G.room;
     case DBG_MODAL:  return modal;
     case DBG_DIALOG: return dlg_npc;
-    case DBG_REDRAW: need_full = 1; return 0;
+    case DBG_REDRAW: need_full = 1; panel_shown = 0; return 0;   /* davvero tutto */
     case DBG_HX:     return G.hx;
     case DBG_HY:     return G.hy;
     case DBG_SLOT:
